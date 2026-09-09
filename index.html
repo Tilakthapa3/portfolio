@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tilak Thapa — Software Engineer &amp; Cybersecurity</title>
-<meta name="description" content="Tilak Thapa — Software Engineer with an M.S. in Cybersecurity. Backend development, database performance, network security.">
+<meta name="description" content="Tilak Thapa — backend developer (Java, Spring Boot, Python) and M.S. student in Technology Management with a Cybersecurity Management concentration. ETL pipelines, database performance, network forensics.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -170,7 +170,7 @@
   @media (prefers-reduced-motion:reduce){.hero .role .cursor{animation:none;}}
 
   .hero p.lede{
-    max-width:600px;
+    max-width:640px;
     color:var(--text-dim);
     font-size:16px;
     margin-bottom:32px;
@@ -344,6 +344,8 @@
     border:1px solid var(--border);
     border-radius:8px;
     padding:20px;
+    display:flex;
+    flex-direction:column;
     transition:border-color 0.15s ease, transform 0.15s ease;
   }
   .project-card:hover{border-color:var(--up-dim);transform:translateY(-2px);}
@@ -365,11 +367,13 @@
   }
   .project-card .repo{
     display:inline-block;
+    align-self:flex-start;
     margin-top:12px;
     font-family:var(--font-mono);
     font-size:12px;
     color:var(--up);
     border-bottom:1px solid var(--up-dim);
+    word-break:break-word;
   }
   .project-card .repo:hover{border-bottom-color:var(--up);}
 
@@ -397,7 +401,7 @@
     white-space:nowrap;
   }
 
-  /* ---------- MISC LISTS (leadership / languages) ---------- */
+  /* ---------- MISC LISTS (certifications / languages) ---------- */
   .simple-list{list-style:none;}
   .simple-list li{
     padding:10px 0;
@@ -469,11 +473,11 @@
   <header class="hero">
     <div class="status-pill"><span class="status-dot"></span>STATUS: OPEN TO WORK</div>
     <h1>Tilak Thapa</h1>
-    <div class="role">Software Engineer · M.S. Cybersecurity<span class="cursor"></span></div>
-    <p class="lede">I build and maintain scalable, object-oriented applications and optimize the databases behind them — backed by a cybersecurity foundation in network security, penetration testing, and secure SDLC.</p>
+    <div class="role">Backend Developer · M.S. Cybersecurity Management<span class="cursor"></span></div>
+    <p class="lede">I build REST APIs with Java and Spring Boot, tune SQL Server queries for performance, and write Python ETL pipelines that ingest live data feeds, persist them to a database, and run unattended in the cloud with alerting and failure detection. I also investigate network traffic in Wireshark to reconstruct intrusions from packet capture.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="#contact">Get in touch</a>
-      <a class="btn btn-ghost" href="#experience">View experience</a>
+      <a class="btn btn-ghost" href="#projects">View projects</a>
     </div>
   </header>
 
@@ -491,12 +495,12 @@
     </div>
     <div class="hop">
       <span class="hop-num">3</span>
-      <span class="hop-name"><b>avila.edu</b><span class="role-note">M.S. Cybersecurity</span></span>
-      <span class="hop-time">2025 – 2026</span>
+      <span class="hop-name"><b>avila.edu</b><span class="role-note">M.S. Technology Management — Cybersecurity Management</span></span>
+      <span class="hop-time">2025 – 2027</span>
     </div>
     <div class="hop">
       <span class="hop-num">4</span>
-      <span class="hop-name"><b>*&nbsp;&nbsp;&nbsp;request timed out</b><span class="role-note">Software Engineer role — next hop</span></span>
+      <span class="hop-name"><b>*&nbsp;&nbsp;&nbsp;request timed out</b><span class="role-note">Software engineering internship on a security team — next hop</span></span>
       <span class="hop-time">now</span>
     </div>
   </section>
@@ -505,45 +509,44 @@
     <h2 class="section-title">Skills</h2>
 
     <div class="skill-group">
-      <div class="skill-group-label">Development</div>
+      <div class="skill-group-label">Languages</div>
       <div class="chips">
         <span class="chip">Python</span><span class="chip">Java</span><span class="chip">C#</span>
-        <span class="chip">JavaScript</span><span class="chip">HTML</span><span class="chip">Spring Boot</span>
-        <span class="chip">OOP</span><span class="chip">Excel VBA</span><span class="chip">Android Studio</span>
+        <span class="chip">JavaScript</span><span class="chip">SQL</span><span class="chip">HTML</span>
       </div>
     </div>
 
     <div class="skill-group">
-      <div class="skill-group-label">Data &amp; Integration</div>
+      <div class="skill-group-label">Backend &amp; APIs</div>
       <div class="chips">
-        <span class="chip">SQL</span><span class="chip">SQL Server</span><span class="chip">Query Optimization</span>
-        <span class="chip">DB Performance Tuning</span><span class="chip">Reporting Workflows</span>
+        <span class="chip">Spring Boot</span><span class="chip">REST API design</span><span class="chip">Android Studio</span>
       </div>
     </div>
 
     <div class="skill-group">
-      <div class="skill-group-label">Infrastructure &amp; OS</div>
+      <div class="skill-group-label">Data</div>
       <div class="chips">
-        <span class="chip">Linux</span><span class="chip">Windows</span><span class="chip">Azure AD</span><span class="chip">Git</span>
+        <span class="chip">SQL Server</span><span class="chip">SQLite</span><span class="chip">Query Optimization</span>
+        <span class="chip">DB Performance Tuning</span><span class="chip">ETL Pipelines</span><span class="chip">JSON/XML Parsing</span>
+      </div>
+    </div>
+
+    <div class="skill-group">
+      <div class="skill-group-label">Tooling &amp; Platforms</div>
+      <div class="chips">
+        <span class="chip">Git</span><span class="chip">Linux (Ubuntu)</span><span class="chip">Windows</span>
+        <span class="chip">Oracle Cloud</span><span class="chip">cron scheduling</span><span class="chip">Agile / SDLC</span>
+        <span class="chip">Root-Cause Analysis</span><span class="chip">Technical Documentation</span>
       </div>
     </div>
 
     <div class="skill-group">
       <div class="skill-group-label">Security</div>
       <div class="chips">
-        <span class="chip">Nmap</span><span class="chip">Wireshark</span><span class="chip">Packet Analysis</span>
-        <span class="chip">Log Analysis</span><span class="chip">Vulnerability Assessment</span>
-        <span class="chip">TCP/IP</span><span class="chip">Ethical Hacking</span>
-        <span class="chip">Cryptography</span><span class="chip">Secure SDLC</span>
-      </div>
-    </div>
-
-    <div class="skill-group">
-      <div class="skill-group-label">Engineering Practice</div>
-      <div class="chips">
-        <span class="chip">Root Cause Analysis</span><span class="chip">Incident Triage</span>
-        <span class="chip">Technical Documentation</span>
-        <span class="chip">Feature Testing</span><span class="chip">Agile / SDLC</span>
+        <span class="chip">Network Forensics</span><span class="chip">Packet Analysis</span>
+        <span class="chip">Vulnerability Assessment</span><span class="chip">Log Analysis</span>
+        <span class="chip">TCP/IP</span><span class="chip">Cryptography</span>
+        <span class="chip">Secure SDLC</span><span class="chip">Nmap</span><span class="chip">Wireshark</span>
       </div>
     </div>
   </section>
@@ -557,11 +560,9 @@
         <div class="log-time">Jan 2023 – Aug 2024</div>
       </div>
       <ul>
-        <li>Delivered end-to-end software solutions in a fast-paced, client-facing environment, translating business requirements into technical specifications</li>
-        <li>Performed SQL query optimization and database performance tuning, supporting data integration and reporting workflows</li>
-        <li>Debugged and resolved software issues through root cause analysis, collaborating cross-functionally in customer-facing settings</li>
-        <li>Supported design, testing, and rollout of new application features, validating changes against technical specifications before deployment</li>
-        <li>Authored and maintained detailed technical documentation for all development projects</li>
+        <li>Designed and maintained backend services and REST endpoints using Java and Spring Boot, supporting design, testing, and rollout of new application features against specification</li>
+        <li>Performed SQL query optimization and database performance tuning on SQL Server, reducing execution time on high-volume queries</li>
+        <li>Debugged and resolved production issues through root-cause analysis, collaborating cross-functionally across teams</li>
       </ul>
       <div class="stack-line">stack: Java · C# · JavaScript · Spring Boot · SQL Server · Git</div>
     </div>
@@ -572,8 +573,7 @@
         <div class="log-time">2020 – 2022</div>
       </div>
       <ul>
-        <li>Assisted grounds and facilities staff with routine campus upkeep</li>
-        <li>Supported setup and turnover for campus events and university functions</li>
+        <li>Assisted grounds and facilities staff with campus upkeep and supported setup and turnover for campus events</li>
       </ul>
     </div>
 
@@ -589,24 +589,36 @@
   </section>
 
   <section class="block" id="projects">
-    <h2 class="section-title">Projects</h2>
+    <h2 class="section-title">Projects &amp; Labs</h2>
     <div class="project-grid">
+
+      <div class="project-card">
+        <h3>Tomcat Takeover — Network Forensics Investigation</h3>
+        <div class="tech">Wireshark · Packet Analysis · CyberDefenders Blue Team Lab · 2026</div>
+        <p>Reconstructed a full compromise of an Apache Tomcat web server from a 21,000-packet capture, isolating attacker and victim hosts from conversation statistics and building a timestamped attack timeline. Traced the intrusion end to end — TCP port scan, Gobuster directory enumeration, discovery and brute-force of the Tomcat Manager interface, malicious file upload, and reverse shell callback disguised as outbound HTTP traffic — using display filters, custom columns, and TCP flag analysis. Completed all eight investigative questions (8/8) with a verifiable achievement record.</p>
+        <a class="repo" href="https://cyberdefenders.org/blueteam-ctf-challenges/achievements/tilakthapa355/tomcat-takeover/" target="_blank" rel="noopener">view achievement →</a>
+      </div>
+
+      <div class="project-card">
+        <h3>Nepal River Watch</h3>
+        <div class="tech">Python · SQLite · Oracle Cloud · cron · Telegram Bot API · 2026</div>
+        <p>ETL and alerting pipeline that ingests live gauge readings for 196 river stations from Nepal's Department of Hydrology and Meteorology JSON API, normalizes them against per-station warning and danger thresholds, and persists readings to SQLite for historical trend analysis. Reliability safeguards: readings older than 90 minutes are excluded rather than silently treated as normal, duplicate alerts are suppressed, and a recurring heartbeat plus failure notice makes pipeline downtime detectable instead of invisible. Deployed to an Ubuntu VM on Oracle Cloud with cron-scheduled runs every 15 minutes, delivering public alerts through a Telegram bot channel; credentials load from a gitignored environment file.</p>
+        <a class="repo" href="https://github.com/Tilakthapa3/nepal-river-watch" target="_blank" rel="noopener">github.com/Tilakthapa3/nepal-river-watch →</a>
+      </div>
+
       <div class="project-card">
         <h3>Nmap Scan Triage CLI</h3>
-        <div class="tech">Python · Nmap · NVIDIA Nemotron API · Axiom</div>
-        <p>Command-line tool that parses Nmap XML output and generates prioritized remediation reports, rating each exposed service HIGH, MEDIUM, or LOW. Validated end to end against live service-version scans. Integrates Axiom log ingestion for run observability and environment-based secret loading to keep API credentials out of version control.</p>
+        <div class="tech">Python · Nmap · NVIDIA Nemotron API · Axiom · 2026</div>
+        <p>Command-line data pipeline that ingests and parses Nmap XML output, transforms it into structured records, and generates prioritized remediation reports rating each exposed service HIGH, MEDIUM, or LOW. Integrates Axiom log ingestion for run observability and alerting, with environment-based secret loading to keep API credentials out of version control.</p>
         <a class="repo" href="https://github.com/Tilakthapa3/nmap-triage" target="_blank" rel="noopener">github.com/Tilakthapa3/nmap-triage →</a>
       </div>
+
       <div class="project-card">
-        <h3>AppsterChef</h3>
-        <div class="tech">Java · Spring Boot · REST API · Android Studio</div>
-        <p>Android capstone application built in Android Studio with a Java/Spring Boot backend REST API for data management. Owned documentation, version control, and deployment.</p>
+        <h3>AppsterChef (Android Capstone)</h3>
+        <div class="tech">Java · Spring Boot · REST API · 2022</div>
+        <p>Full Android application backed by a Java/Spring Boot REST API, owning documentation, version control, and deployment.</p>
       </div>
-      <div class="project-card">
-        <h3>C# &amp; JavaScript Applications</h3>
-        <div class="tech">C# · JavaScript</div>
-        <p>Multiple applications demonstrating object-oriented design, UI logic, and secure coding practices.</p>
-      </div>
+
     </div>
   </section>
 
@@ -615,31 +627,27 @@
 
     <div class="edu-entry">
       <div>
-        <h3>M.S. in Cybersecurity</h3>
-        <div class="school">Avila University · GPA 3.85/4.00</div>
-        <div class="detail">Coursework: Network Security, Ethical Hacking, Cryptography, Penetration Testing (CY 651), Packet Analysis, Databases</div>
+        <h3>M.S. in Technology Management</h3>
+        <div class="school">Concentration in Cybersecurity Management · Avila University</div>
+        <div class="detail">Coursework: Network Security, Information Security Management, Penetration Testing, Cloud Computing, Cybercrime &amp; Digital Forensics</div>
       </div>
-      <div class="edu-time">Jan 2025 – Dec 2026 (Expected)</div>
+      <div class="edu-time">Jan 2025 – May 2027 (Expected)</div>
     </div>
 
     <div class="edu-entry">
       <div>
         <h3>B.S. in Computer Information Science</h3>
         <div class="school">Washburn University</div>
-        <div class="detail">Dean's List — Spring 2021 · Active Member, Computer Club Nepal</div>
+        <div class="detail">Dean's List — Spring 2021</div>
       </div>
       <div class="edu-time">Aug 2017 – Dec 2022</div>
     </div>
 
-    <h2 class="section-title" style="margin-top:40px;">Certifications</h2>
+    <h2 class="section-title" style="margin-top:40px;">Certifications &amp; Training</h2>
     <ul class="simple-list">
-      <li><b>Foundations of Cybersecurity</b> — Google (Coursera) <span class="meta">Aug 2026</span></li>
+      <li><b>Foundations of Cybersecurity</b> — Google (Coursera), Grade 100% <span class="meta">Aug 2026</span></li>
       <li><b>Network Communication &amp; LAN Protocols</b> — University of Colorado System (Coursera) <span class="meta">Oct 2022</span></li>
-    </ul>
-
-    <h2 class="section-title" style="margin-top:40px;">Leadership</h2>
-    <ul class="simple-list">
-      <li><b>Greg Brenneman Leadership Series</b> — Washburn University <span class="meta">2021</span></li>
+      <li><b>Greg Brenneman Leadership Series</b> — Washburn University · 6-month program in team management and communication <span class="meta">2021</span></li>
     </ul>
 
     <h2 class="section-title" style="margin-top:40px;">Languages</h2>
@@ -653,10 +661,9 @@
   <footer id="contact">
     <div class="eyebrow" style="justify-content:center;">connection --open</div>
     <h2>Let's talk</h2>
-    <p>Topeka, KS · Open to Software Engineer &amp; Cybersecurity roles</p>
+    <p>Topeka, KS · Seeking a software engineering internship on a security team</p>
     <div class="contact-links">
       <a href="mailto:Tilakthapa355@gmail.com">Tilakthapa355@gmail.com</a>
-      <a href="tel:+17858616639">(785) 861-6639</a>
       <a href="https://linkedin.com/in/tilak-thapa355" target="_blank" rel="noopener">linkedin.com/in/tilak-thapa355</a>
       <a href="https://github.com/Tilakthapa3" target="_blank" rel="noopener">github.com/Tilakthapa3</a>
     </div>
