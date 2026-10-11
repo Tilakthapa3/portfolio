@@ -451,7 +451,93 @@
     font-size:11px;
     color:var(--text-faint);
   }
+
+  /* =========================================================
+     ANIMATIONS — progressive enhancement (only when JS runs)
+     ========================================================= */
+
+  /* scroll progress bar */
+  #progress{
+    position:fixed;top:0;left:0;height:2px;width:100%;
+    background:linear-gradient(90deg,var(--up),var(--info));
+    transform-origin:0 50%;transform:scaleX(0);
+    z-index:100;box-shadow:0 0 8px rgba(95,214,139,0.6);
+  }
+
+  /* packet traffic on the grid */
+  #packets{
+    position:fixed;inset:0;width:100%;height:100%;
+    pointer-events:none;z-index:0;
+  }
+
+  /* boot sequence overlay */
+  #boot{
+    position:fixed;inset:0;z-index:200;
+    background:var(--bg);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:24px;cursor:pointer;
+    transition:opacity .45s ease, visibility .45s ease;
+  }
+  #boot.done{opacity:0;visibility:hidden;}
+  #boot pre{
+    font-family:var(--font-mono);font-size:13px;line-height:1.75;
+    color:var(--text-dim);width:min(560px,100%);white-space:pre-wrap;
+  }
+  #boot .ok{color:var(--up);}
+  #boot .hl{color:var(--text);}
+  #boot .skip{display:block;width:min(560px,100%);margin-top:18px;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
+
+  /* hero entrance */
+  .js .hero > *{opacity:0;transform:translateY(14px);}
+  .js.ready .hero > *{
+    opacity:1;transform:none;
+    transition:opacity .6s ease, transform .6s cubic-bezier(.2,.7,.2,1);
+  }
+  .js.ready .hero > *:nth-child(2){transition-delay:.08s;}
+  .js.ready .hero > *:nth-child(3){transition-delay:.16s;}
+  .js.ready .hero > *:nth-child(4){transition-delay:.24s;}
+  .js.ready .hero > *:nth-child(5){transition-delay:.32s;}
+  .hero h1 .glitch{color:var(--up);}
+
+  /* scroll reveal */
+  .js .reveal{opacity:0;transform:translateY(22px);
+    transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1);}
+  .js .reveal.in{opacity:1;transform:none;}
+
+  /* section title prompt */
+  h2.section-title .prompt{color:var(--up);font-family:var(--font-mono);font-weight:500;margin-right:10px;font-size:.8em;}
+
+  /* traceroute ping-in */
+  .js .route .hop{opacity:0;transform:translateX(-10px);}
+  .route .hop.on{opacity:1;transform:none;transition:opacity .35s ease, transform .35s ease;}
+  .hop .ms{color:var(--up);margin-right:10px;font-size:11px;}
+  .hop.timeout .ms{color:var(--warn);}
+  .hop.timeout b{animation:flicker 2.4s infinite;}
+  @keyframes flicker{0%,100%{opacity:1}45%{opacity:1}50%{opacity:.35}55%{opacity:1}}
+
+  /* chips cascade */
+  .js .chips.reveal .chip{opacity:0;transform:scale(.9);}
+  .js .chips.reveal.in .chip{opacity:1;transform:none;
+    transition:opacity .35s ease, transform .35s ease, border-color .15s ease, color .15s ease;}
+  .chip:hover{border-color:var(--up-dim);color:var(--up);}
+
+  /* project card spotlight */
+  .project-card{position:relative;overflow:hidden;}
+  .project-card::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(320px circle at var(--mx,50%) var(--my,50%), rgba(95,214,139,0.09), transparent 60%);
+    opacity:0;transition:opacity .25s ease;
+  }
+  .project-card:hover::before{opacity:1;}
+  .project-card > *{position:relative;}
+
+  @media (prefers-reduced-motion:reduce){
+    .js .hero > *, .js .reveal, .js .route .hop, .js .chips.reveal .chip{opacity:1 !important;transform:none !important;transition:none !important;}
+    .hop.timeout b{animation:none;}
+    #packets, #boot{display:none;}
+  }
 </style>
+<script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
 
@@ -671,6 +757,168 @@
   </footer>
 
 </div>
+
+<div id="progress" aria-hidden="true"></div>
+<canvas id="packets" aria-hidden="true"></canvas>
+
+<script>
+(function(){
+  var root = document.documentElement;
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function ready(){ root.classList.add('ready'); }
+
+  /* ---------- scroll progress ---------- */
+  var bar = document.getElementById('progress');
+  function onScroll(){
+    var h = document.documentElement.scrollHeight - innerHeight;
+    bar.style.transform = 'scaleX(' + (h > 0 ? scrollY / h : 0) + ')';
+  }
+  addEventListener('scroll', onScroll, {passive:true}); onScroll();
+
+  /* ---------- section title prompts ---------- */
+  document.querySelectorAll('h2.section-title').forEach(function(h){
+    var s = document.createElement('span'); s.className = 'prompt'; s.textContent = '$';
+    h.insertBefore(s, h.firstChild);
+  });
+
+  /* ---------- traceroute latencies ---------- */
+  var hops = document.querySelectorAll('.route .hop');
+  hops.forEach(function(hop, i){
+    var t = hop.querySelector('.hop-time');
+    var ms = document.createElement('span'); ms.className = 'ms';
+    if (i === hops.length - 1){ hop.classList.add('timeout'); ms.textContent = '* * *'; }
+    else { ms.textContent = (8 + i * 11 + Math.random() * 6).toFixed(1) + ' ms'; }
+    t.insertBefore(ms, t.firstChild);
+  });
+
+  if (reduce){ ready(); hops.forEach(function(h){ h.classList.add('on'); }); return; }
+
+  /* ---------- scroll reveal ---------- */
+  var targets = document.querySelectorAll('.skill-group-label, .chips, .log-entry, .project-card, .edu-entry, .simple-list li, section.block h2, footer > *');
+  targets.forEach(function(el){ el.classList.add('reveal'); });
+  document.querySelectorAll('.chips').forEach(function(c){
+    [].forEach.call(c.children, function(ch, i){ ch.style.transitionDelay = (i * 40) + 'ms'; });
+  });
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if (!e.isIntersecting) return;
+      e.target.classList.add('in'); io.unobserve(e.target);
+    });
+  }, {threshold:0.12, rootMargin:'0px 0px -40px 0px'});
+  targets.forEach(function(el){ io.observe(el); });
+
+  var routeIO = new IntersectionObserver(function(entries){
+    if (!entries[0].isIntersecting) return;
+    hops.forEach(function(h, i){ setTimeout(function(){ h.classList.add('on'); }, 220 * i); });
+    routeIO.disconnect();
+  }, {threshold:0.3});
+  routeIO.observe(document.querySelector('.route'));
+
+  /* ---------- project card spotlight ---------- */
+  document.querySelectorAll('.project-card').forEach(function(card){
+    card.addEventListener('pointermove', function(e){
+      var r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+  });
+
+  /* ---------- name decrypt ---------- */
+  function decrypt(el){
+    var final = el.textContent, glyphs = '!<>-_\\/[]{}=+*^?#01ABCDEF';
+    var frame = 0, total = 28;
+    (function tick(){
+      var out = '';
+      for (var i = 0; i < final.length; i++){
+        var lock = (i / final.length) * total * 0.7 + 6;
+        if (final[i] === ' ' || frame >= lock) out += final[i];
+        else out += '<span class="glitch">' + glyphs[Math.floor(Math.random() * glyphs.length)] + '</span>';
+      }
+      el.innerHTML = out;
+      if (++frame <= total) setTimeout(tick, 40); else el.textContent = final;
+    })();
+  }
+
+  /* ---------- packet traffic on the 48px grid ---------- */
+  var cv = document.getElementById('packets'), ctx = cv.getContext('2d');
+  var G = 48, W, H, dpr, packets = [], running = true;
+  function size(){
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function spawn(){
+    var horiz = Math.random() < 0.5, dir = Math.random() < 0.5 ? 1 : -1;
+    var lane = horiz ? Math.floor(Math.random() * (H / G)) * G : Math.floor(Math.random() * (W / G)) * G;
+    var start = dir > 0 ? -40 : (horiz ? W : H) + 40;
+    return {h:horiz, d:dir, lane:lane, p:start, v:0.6 + Math.random() * 1.4,
+            c: Math.random() < 0.15 ? '255,180,84' : (Math.random() < 0.3 ? '111,168,255' : '95,214,139')};
+  }
+  function step(){
+    if (!running) return;
+    ctx.clearRect(0, 0, W, H);
+    for (var i = 0; i < packets.length; i++){
+      var k = packets[i]; k.p += k.v * k.d;
+      var x = k.h ? k.p : k.lane, y = k.h ? k.lane : k.p;
+      var tx = k.h ? -k.d * 36 : 0, ty = k.h ? 0 : -k.d * 36;
+      var g = ctx.createLinearGradient(x + tx, y + ty, x, y);
+      g.addColorStop(0, 'rgba(' + k.c + ',0)'); g.addColorStop(1, 'rgba(' + k.c + ',0.35)');
+      ctx.strokeStyle = g; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + tx, y + ty); ctx.lineTo(x, y); ctx.stroke();
+      ctx.fillStyle = 'rgba(' + k.c + ',0.8)';
+      ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+      var lim = k.h ? W : H;
+      if (k.p < -60 || k.p > lim + 60) packets[i] = spawn();
+    }
+    requestAnimationFrame(step);
+  }
+  size(); addEventListener('resize', size);
+  var count = innerWidth < 600 ? 7 : 14;
+  for (var i = 0; i < count; i++){ var p = spawn(); p.p = Math.random() * (p.h ? W : H); packets.push(p); }
+  document.addEventListener('visibilitychange', function(){
+    running = !document.hidden; if (running) requestAnimationFrame(step);
+  });
+  requestAnimationFrame(step);
+
+  /* ---------- boot sequence (once per visit, skippable) ---------- */
+  function start(){ ready(); decrypt(document.querySelector('.hero h1')); }
+  var seen = false;
+  try { seen = sessionStorage.getItem('booted') === '1'; } catch(e){}
+  if (seen){ start(); return; }
+  try { sessionStorage.setItem('booted', '1'); } catch(e){}
+
+  var lines = [
+    '<span class="ok">[  OK  ]</span> Mounting /home/tilak',
+    '<span class="ok">[  OK  ]</span> Starting network interfaces',
+    '<span class="ok">[  OK  ]</span> Loading packet capture modules',
+    '<span class="ok">[  OK  ]</span> Verifying TLS certificate chain',
+    '<span class="ok">[  OK  ]</span> Reached target <span class="hl">portfolio.service</span>'
+  ];
+  var boot = document.createElement('div'); boot.id = 'boot';
+  boot.setAttribute('aria-hidden', 'true');
+  var pre = document.createElement('pre'); boot.appendChild(pre);
+  document.body.appendChild(boot);
+  var n = 0, done = false, timer;
+  function finish(){
+    if (done) return; done = true; clearTimeout(timer);
+    boot.classList.add('done'); start();
+    setTimeout(function(){ boot.remove(); }, 500);
+  }
+  (function next(){
+    if (done) return;
+    if (n < lines.length){
+      pre.innerHTML += lines[n++] + '\n';
+      timer = setTimeout(next, 220 + Math.random() * 120);
+    } else timer = setTimeout(finish, 350);
+  })();
+  boot.addEventListener('click', finish);
+  addEventListener('keydown', finish, {once:true});
+  var skip = document.createElement('span'); skip.className = 'skip'; skip.textContent = 'click or press any key to skip';
+  pre.parentNode.appendChild(skip);
+})();
+</script>
 
 </body>
 </html>
