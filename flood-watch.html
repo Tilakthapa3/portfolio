@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nepal River Watch — Live Flood Board</title>
+<meta name="description" content="Live river levels from Nepal's Department of Hydrology and Meteorology, checked against each station's own warning and danger levels.">
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#ddd; --ok:#1a7f37; --warn:#b45309; --danger:#c0392b; --chip:#f2f2f2; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; color: var(--ink); line-height: 1.5; }
+  header, main, footer { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 28px; }
+  h1 { font-size: 1.7em; margin: 0 0 4px; }
+  .tagline { color: var(--muted); margin: 0 0 16px; }
+  .topbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
+  .live-dot.stale { background: var(--danger); }
+  button.lang { border: 1px solid var(--line); background: #fff; border-radius: 20px; padding: 6px 14px; cursor: pointer; font-size: 0.95em; }
+  button.lang[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+  .chip { background: var(--chip); border-radius: 20px; padding: 6px 12px; font-size: 0.92em; }
+  .chip b { font-size: 1.05em; }
+  .chip.warn b { color: var(--warn); }
+  .chip.danger b { color: var(--danger); }
+  .banner { border: 1px solid var(--danger); background: #fdf2f2; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: none; }
+  .banner.show { display: block; }
+  h2 { font-size: 1.2em; margin: 28px 0 8px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  .card p { margin: 6px 0; }
+  .rank { list-style: none; margin: 0; padding: 0; }
+  .rank li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #eee; }
+  .rank li:last-child { border-bottom: none; }
+  .rank .margin { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .over { color: var(--danger); font-weight: 600; }
+  .under { color: var(--muted); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+  .filters input, .filters select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.95em; }
+  .filters input { flex: 1 1 200px; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.93em; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eee; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 12px; font-size: 0.85em; color: #fff; }
+  .badge.NORMAL { background: var(--ok); }
+  .badge.WARNING { background: var(--warn); }
+  .badge.DANGER { background: var(--danger); }
+  .stale-mark { color: var(--danger); font-size: 0.85em; }
+  .muted { color: var(--muted); }
+  .small { font-size: 0.88em; }
+  a { color: #0b5cad; }
+  footer { color: var(--muted); font-size: 0.88em; padding-bottom: 32px; }
+  .error { border: 1px solid var(--danger); background: #fdf2f2; border-radius: 8px; padding: 12px 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 data-i18n="title">Nepal River Watch — Live Flood Board</h1>
+  <p class="tagline" data-i18n="tagline">Live river levels · compared with each station's own warning and danger levels</p>
+  <div class="topbar">
+    <span><span class="live-dot" id="liveDot"></span><span id="updatedLine">Loading…</span></span>
+    <span>
+      <button class="lang" id="btnEn" aria-pressed="true">English</button>
+      <button class="lang" id="btnNe" aria-pressed="false">नेपाली</button>
+    </span>
+  </div>
+</header>
+<main>
+  <div class="banner" id="staleBanner" data-i18n="staleBanner">This snapshot is old — the automatic update may have failed. Treat every reading as unconfirmed until a fresh snapshot lands.</div>
+  <div class="chips" id="chips"></div>
+
+  <h2 data-i18n="closest">Closest to threshold</h2>
+  <div class="card"><ul class="rank" id="rankList"></ul></div>
+
+  <div id="alertSections"></div>
+
+  <h2 data-i18n="allStations">All stations</h2>
+  <div class="filters">
+    <input id="search" type="search" data-i18n-ph="searchPh" placeholder="Search stations, districts…">
+    <select id="basinFilter"><option value="" data-i18n="allBasins">All basins</option></select>
+    <select id="statusFilter">
+      <option value="" data-i18n="allStatuses">All statuses</option>
+      <option value="DANGER" data-i18n="danger">Danger</option>
+      <option value="WARNING" data-i18n="warning">Warning</option>
+      <option value="NORMAL" data-i18n="normal">Normal</option>
+      <option value="STALE" data-i18n="stale">Stale</option>
+    </select>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr>
+      <th data-i18n="station">Station</th><th data-i18n="district">District</th><th data-i18n="basin">Basin</th>
+      <th class="num" data-i18n="level">Level</th><th class="num" data-i18n="warning">Warning</th><th class="num" data-i18n="danger">Danger</th>
+      <th class="num" data-i18n="vsWarning">vs warning</th><th data-i18n="trend">Trend</th><th data-i18n="measured">Measured</th><th data-i18n="status">Status</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <p class="muted small" id="rowCount"></p>
+
+  <h2 data-i18n="glofTitle">GLOF watch</h2>
+  <div class="card">
+    <p data-i18n="glofBody">The August 2026 Rasuwa flood was a suspected glacial-lake outburst: water that started above the gauge network. River levels alone cannot warn for that — so this board is paired with satellite tracking of Nepal's high-risk glacial lakes.</p>
+    <p><a href="https://github.com/Tilakthapa3/nepal-glacier-tracker" target="_blank" rel="noopener">nepal-glacier-tracker →</a> &nbsp; <a href="nepal-glacier-tracker-architecture.html">view architecture diagram →</a></p>
+  </div>
+
+  <h2 data-i18n="sourcesTitle">Sources &amp; honesty</h2>
+  <div class="card small">
+    <p><span data-i18n="sourcesBody">Data: Department of Hydrology and Meteorology (DHM), Government of Nepal — the same public gauge feed behind the river-watch pipeline. Snapshot refreshes automatically every 30 minutes; this page re-checks every 5. Readings older than 90 minutes are marked stale, never silently treated as current. Each station is judged only against its own warning and danger levels, because gauges use different datums.</span></p>
+    <p><b data-i18n="unofficial">Unofficial. Follow official warnings.</b> <span lang="ne">अनौपचारिक। कृपया आधिकारिक चेतावनीहरू पालना गर्नुहोस्।</span></p>
+    <p><span data-i18n="officialRecord">For the official record — relief funds, handovers, and recovery plans — see the Ministry of Finance portal:</span> <a href="https://mofnepal.github.io/rasuwa-flood-update/" target="_blank" rel="noopener">Rasuwa–Bhotekoshi Flood Update →</a></p>
+    <p><span data-i18n="rawData">Machine-readable snapshot:</span> <a href="data/rivers.json">data/rivers.json</a> · <span data-i18n="codeBy">Pipeline code:</span> <a href="https://github.com/Tilakthapa3/nepal-river-watch" target="_blank" rel="noopener">nepal-river-watch →</a></p>
+  </div>
+</main>
+<footer>
+  <p><span data-i18n="footerNote">Built by Tilak Thapa · Data: DHM, Government of Nepal · No casualty figures or missing-person lists are published here — those belong to the official authorities.</span></p>
+</footer>
+<script>
+const I18N = {
+  en: {
+    title: "Nepal River Watch — Live Flood Board",
+    tagline: "Live river levels · compared with each station's own warning and danger levels",
+    staleBanner: "This snapshot is old — the automatic update may have failed. Treat every reading as unconfirmed until a fresh snapshot lands.",
+    closest: "Closest to threshold",
+    allStations: "All stations",
+    searchPh: "Search stations, districts…",
+    allBasins: "All basins",
+    allStatuses: "All statuses",
+    danger: "Danger", warning: "Warning", normal: "Normal", stale: "Stale",
+    station: "Station", district: "District", basin: "Basin", level: "Level",
+    vsWarning: "vs warning", trend: "Trend", measured: "Measured", status: "Status",
+    glofTitle: "GLOF watch",
+    glofBody: "The August 2026 Rasuwa flood was a suspected glacial-lake outburst: water that started above the gauge network. River levels alone cannot warn for that — so this board is paired with satellite tracking of Nepal's high-risk glacial lakes.",
+    sourcesTitle: "Sources & honesty",
+    sourcesBody: "Data: Department of Hydrology and Meteorology (DHM), Government of Nepal — the same public gauge feed behind the river-watch pipeline. Snapshot refreshes automatically every 30 minutes; this page re-checks every 5. Readings older than 90 minutes are marked stale, never silently treated as current. Each station is judged only against its own warning and danger levels, because gauges use different datums.",
+    unofficial: "Unofficial. Follow official warnings.",
+    officialRecord: "For the official record — relief funds, handovers, and recovery plans — see the Ministry of Finance portal:",
+    rawData: "Machine-readable snapshot:",
+    codeBy: "Pipeline code:",
+    footerNote: "Built by Tilak Thapa · Data: DHM, Government of Nepal · No casualty figures or missing-person lists are published here — those belong to the official authorities.",
+    reporting: "reporting", fresh: "fresh", staleN: "stale", atWarning: "at warning", atDanger: "at danger",
+    updated: "Updated", ago: "min ago", stationsShown: "stations shown",
+    dangerHeading: "Stations at danger level", warningHeading: "Stations at warning level",
+    noneAbove: "No stations above warning level right now.",
+    loadError: "Could not load the latest snapshot. Check back in a few minutes.",
+    trendRising: "Rising", trendFalling: "Falling", trendSteady: "Steady"
+  },
+  ne: {
+    title: "नेपाल नदी निगरानी — प्रत्यक्ष बाढी बोर्ड",
+    tagline: "प्रत्यक्ष नदी सतह · प्रत्येक स्टेसनको चेतावनी र खतरा सतहसँग तुलना",
+    staleBanner: "यो स्न्यापसट पुरानो छ — स्वचालित अद्यावधिक असफल भएको हुन सक्छ। नयाँ स्न्यापसट नआएसम्म कुनै पनि मापनलाई पुष्टि भएको नमान्नुहोस्।",
+    closest: "सीमाको सबैभन्दा नजिक",
+    allStations: "सबै स्टेसन",
+    searchPh: "स्टेसन, जिल्ला खोज्नुहोस्…",
+    allBasins: "सबै जलाधार",
+    allStatuses: "सबै अवस्था",
+    danger: "खतरा", warning: "चेतावनी", normal: "सामान्य", stale: "पुरानो",
+    station: "स्टेसन", district: "जिल्ला", basin: "जलाधार", level: "सतह",
+    vsWarning: "चेतावनीभन्दा", trend: "प्रवृत्ति", measured: "मापन", status: "अवस्था",
+    glofTitle: "हिमताल बाढी निगरानी",
+    glofBody: "अगस्ट २०२६ को रसुवा बाढी हिमताल विस्फोट भएको आशंका गरिएको थियो: गेज नेटवर्कभन्दा माथिबाट सुरु भएको पानी। नदीको सतहले मात्र त्यसको चेतावनी दिन सक्दैन — त्यसैले यो बोर्ड नेपालका उच्च जोखिमका हिमतालहरूको उपग्रह निगरानीसँग जोडिएको छ।",
+    sourcesTitle: "स्रोत र पारदर्शिता",
+    sourcesBody: "तथ्याङ्क: जल तथा मौसम विज्ञान विभाग (DHM), नेपाल सरकार — नदी निगरानी पाइपलाइनकै सार्वजनिक गेज स्रोत। स्न्यापसट हरेक ३० मिनेटमा स्वचालित रूपमा अद्यावधिक हुन्छ; यो पृष्ठ हरेक ५ मिनेटमा पुनः जाँच्छ। ९० मिनेटभन्दा पुराना मापनहरूलाई पुरानो भनेर चिन्ह लगाइन्छ, कहिल्यै चुपचाप हालको भनेर देखाइँदैन। प्रत्येक स्टेसनलाई त्यसकै चेतावनी र खतरा सतहसँग मात्र तुलना गरिन्छ।",
+    unofficial: "अनौपचारिक। कृपया आधिकारिक चेतावनीहरू पालना गर्नुहोस्।",
+    officialRecord: "आधिकारिक विवरण — राहत कोष, हस्तान्तरण र पुनर्लाभ योजनाहरू — का लागि अर्थ मन्त्रालयको पोर्टल हेर्नुहोस्:",
+    rawData: "मेसिनले पढ्न सकिने स्न्यापसट:",
+    codeBy: "पाइपलाइन कोड:",
+    footerNote: "तिलक थापाद्वारा निर्मित · तथ्याङ्क: DHM, नेपाल सरकार · यहाँ हताहत संख्या वा बेपत्ता व्यक्तिहरूको सूची प्रकाशित गरिँदैन — ती आधिकारिक निकायहरूको जिम्मेवारी हो।",
+    reporting: "रिपोर्ट गर्दै", fresh: "ताजा", staleN: "पुरानो", atWarning: "चेतावनीमा", atDanger: "खतरामा",
+    updated: "अद्यावधिक", ago: "मिनेट अघि", stationsShown: "स्टेसन देखाइएको",
+    dangerHeading: "खतरा सतहमा पुगेका स्टेसन", warningHeading: "चेतावनी सतहमा पुगेका स्टेसन",
+    noneAbove: "अहिले कुनै पनि स्टेसन चेतावनी सतहभन्दा माथि छैन।",
+    loadError: "पछिल्लो स्न्यापसट लोड गर्न सकिएन। केही मिनेटमा फेरि प्रयास गर्नुहोस्।",
+    trendRising: "बढ्दो", trendFalling: "घट्दो", trendSteady: "स्थिर"
+  }
+};
+let lang = "en";
+let snapshot = null;
+const t = (k) => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (n) => (n == null ? "—" : Number(n).toFixed(2));
+const trendLabel = (raw) => {
+  const v = String(raw || "").toUpperCase();
+  if (v === "RISING") return "↑ " + t("trendRising");
+  if (v === "FALLING") return "↓ " + t("trendFalling");
+  if (v === "STEADY") return "→ " + t("trendSteady");
+  return esc(raw || "—");
+};
+
+function applyLang() {
+  document.documentElement.lang = lang === "ne" ? "ne" : "en";
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  document.getElementById("btnEn").setAttribute("aria-pressed", lang === "en");
+  document.getElementById("btnNe").setAttribute("aria-pressed", lang === "ne");
+  if (snapshot) render(snapshot);
+}
+
+function render(d) {
+  const ageMin = Math.max(0, Math.round((Date.now() - new Date(d.generated_at_utc).getTime()) / 60000));
+  document.getElementById("updatedLine").textContent =
+    `${t("updated")}: ${esc(d.generated_at_npt)} (${ageMin} ${t("ago")})`;
+  document.getElementById("liveDot").classList.toggle("stale", ageMin > d.stale_minutes);
+  document.getElementById("staleBanner").classList.toggle("show", ageMin > d.stale_minutes);
+  document.getElementById("chips").innerHTML =
+    `<span class="chip"><b>${d.reporting}</b> ${t("reporting")}</span>` +
+    `<span class="chip"><b>${d.fresh}</b> ${t("fresh")}</span>` +
+    `<span class="chip"><b>${d.stale}</b> ${t("staleN")}</span>` +
+    `<span class="chip warn"><b>${d.warning}</b> ${t("atWarning")}</span>` +
+    `<span class="chip danger"><b>${d.danger}</b> ${t("atDanger")}</span>`;
+
+  const withMargin = d.stations.filter((s) => s.margin_vs_warning != null)
+    .sort((a, b) => b.margin_vs_warning - a.margin_vs_warning);
+  document.getElementById("rankList").innerHTML = withMargin.slice(0, 8).map((s) => {
+    const m = s.margin_vs_warning;
+    const cls = m >= 0 ? "over" : "under";
+    const sign = m >= 0 ? "+" : "";
+    return `<li><span><a href="${esc(s.station_url)}" target="_blank" rel="noopener">${esc(s.name)}</a>` +
+      `<span class="muted"> · ${esc(s.district || "—")}</span>${s.stale ? ' <span class="stale-mark">● ' + t("stale") + '</span>' : ""}</span>` +
+      `<span class="margin ${cls}">${sign}${m.toFixed(2)} m</span></li>`;
+  }).join("");
+
+  const danger = d.stations.filter((s) => s.severity === "DANGER");
+  const warning = d.stations.filter((s) => s.severity === "WARNING");
+  const section = (heading, list) => {
+    if (!list.length) return "";
+    const items = list.map((s) =>
+      `<li><span><a href="${esc(s.station_url)}" target="_blank" rel="noopener">${esc(s.name)}</a>` +
+      `<span class="muted"> · ${esc(s.district || "—")} · ${fmt(s.water_level)} m</span></span>` +
+      `<span class="margin over">+${s.margin_vs_warning.toFixed(2)} m</span></li>`).join("");
+    return `<h2>${heading}</h2><div class="card"><ul class="rank">${items}</ul></div>`;
+  };
+  document.getElementById("alertSections").innerHTML =
+    section(t("dangerHeading"), danger) + section(t("warningHeading"), warning) +
+    ((danger.length || warning.length) ? "" : `<p class="muted">${t("noneAbove")}</p>`);
+
+  const basins = [...new Set(d.stations.map((s) => s.basin).filter(Boolean))].sort();
+  const sel = document.getElementById("basinFilter");
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">${t("allBasins")}</option>` +
+    basins.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
+  sel.value = cur;
+  renderRows(d);
+}
+
+function renderRows(d) {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  const basin = document.getElementById("basinFilter").value;
+  const status = document.getElementById("statusFilter").value;
+  const rank = { DANGER: 0, WARNING: 1, NORMAL: 2 };
+  const rows = d.stations.filter((s) => {
+    if (basin && s.basin !== basin) return false;
+    if (status === "STALE" && !s.stale) return false;
+    if (status && status !== "STALE" && s.severity !== status) return false;
+    if (q && !((s.name || "") + " " + (s.district || "") + " " + (s.basin || "")).toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a, b) => (rank[a.severity] - rank[b.severity]) ||
+    ((b.margin_vs_warning ?? -Infinity) - (a.margin_vs_warning ?? -Infinity)) ||
+    a.name.localeCompare(b.name));
+  document.getElementById("rows").innerHTML = rows.map((s) => {
+    const m = s.margin_vs_warning;
+    const mHtml = m == null ? "—" : `<span class="${m >= 0 ? "over" : "under"}">${m >= 0 ? "+" : ""}${m.toFixed(2)}</span>`;
+    return `<tr><td><a href="${esc(s.station_url)}" target="_blank" rel="noopener">${esc(s.name)}</a>${s.stale ? ' <span class="stale-mark">●</span>' : ""}</td>` +
+      `<td>${esc(s.district || "—")}</td><td>${esc(s.basin || "—")}</td>` +
+      `<td class="num">${fmt(s.water_level)}</td><td class="num">${fmt(s.warning_level)}</td><td class="num">${fmt(s.danger_level)}</td>` +
+      `<td class="num">${mHtml}</td><td>${trendLabel(s.trend)}</td><td>${esc(s.measured_at_npt)}</td>` +
+      `<td><span class="badge ${s.severity}">${t(s.severity === "NORMAL" ? "normal" : s.severity === "WARNING" ? "warning" : "danger")}</span></td></tr>`;
+  }).join("");
+  document.getElementById("rowCount").textContent = `${rows.length} / ${d.stations.length} ${t("stationsShown")}`;
+}
+
+async function load() {
+  try {
+    const res = await fetch("data/rivers.json?v=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    snapshot = await res.json();
+    render(snapshot);
+  } catch (e) {
+    if (!snapshot) {
+      document.getElementById("chips").innerHTML = `<div class="error">${t("loadError")}</div>`;
+      document.getElementById("updatedLine").textContent = "";
+    }
+  }
+}
+
+document.getElementById("btnEn").addEventListener("click", () => { lang = "en"; applyLang(); });
+document.getElementById("btnNe").addEventListener("click", () => { lang = "ne"; applyLang(); });
+["search", "basinFilter", "statusFilter"].forEach((id) =>
+  document.getElementById(id).addEventListener("input", () => snapshot && renderRows(snapshot)));
+applyLang();
+load();
+setInterval(load, 300000);
+</script>
+</body>
+</html>
