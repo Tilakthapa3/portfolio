@@ -1,0 +1,29 @@
+name: Update river snapshot
+
+# Keeps data/rivers.json fresh for the live flood board without any
+# human in the loop: fetch DHM readings, commit only when they changed.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch DHM readings
+        run: python scripts/update-rivers-snapshot.py data/rivers.json
+      - name: Commit if changed
+        run: |
+          git config user.name "river-watch-bot"
+          git config user.email "river-watch-bot@users.noreply.github.com"
+          git add data/rivers.json
+          git diff --cached --quiet || git commit -m "Update river snapshot"
+          git push
