@@ -691,6 +691,7 @@
         <p>ETL and alerting pipeline that ingests live gauge readings for 196 river stations from Nepal's Department of Hydrology and Meteorology JSON API, normalizes them against per-station warning and danger thresholds, and persists readings to SQLite for historical trend analysis. Reliability safeguards: readings older than 90 minutes are excluded rather than silently treated as normal, duplicate alerts are suppressed, and a recurring heartbeat plus failure notice makes pipeline downtime detectable instead of invisible. Deployed to an Ubuntu VM on Oracle Cloud with cron-scheduled runs every 15 minutes, delivering public alerts through a Telegram bot channel; credentials load from a gitignored environment file.</p>
         <a class="repo" href="https://github.com/Tilakthapa3/nepal-river-watch" target="_blank" rel="noopener">github.com/Tilakthapa3/nepal-river-watch →</a>
         <a class="repo" href="nepal-river-watch-architecture.html">view architecture diagram →</a>
+        <a class="repo" href="flood-watch.html">live flood board →</a>
       </div>
       <div class="project-card">
         <h3>Nepal Glacier Tracker</h3>
