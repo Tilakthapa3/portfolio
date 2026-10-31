@@ -536,8 +536,71 @@
     .hop.timeout b{animation:none;}
     #packets, #boot{display:none;}
   }
+
+  /* =========================================================
+     3D PACKET GRID — WebGL scene behind the page (see module script)
+     ========================================================= */
+  #scene3d{
+    position:fixed;left:0;top:0;
+    width:100%;height:100vh;height:100lvh;
+    display:block;pointer-events:none;z-index:0;opacity:0;
+  }
+  #vignette{
+    position:fixed;inset:0;pointer-events:none;z-index:0;
+    opacity:0;transition:opacity 1.2s ease;
+    background:
+      linear-gradient(180deg, rgba(10,14,16,.6) 0, rgba(10,14,16,0) 140px),
+      radial-gradient(130% 90% at 50% 40%, rgba(10,14,16,0) 55%, rgba(10,14,16,.7) 100%);
+  }
+  .webgl #vignette{opacity:1;}
+  .webgl body::before, .webgl #packets{display:none;}
+  .webgl .hero .role, .webgl .hero p.lede{text-shadow:0 1px 16px rgba(10,14,16,.95);}
+  .webgl .hero{cursor:crosshair;}
+  .webgl .hero > *{cursor:auto;}
+  @media (prefers-reduced-motion:no-preference){
+    .hero{min-height:calc(100vh - 54px);min-height:calc(100svh - 54px);}
+  }
+  /* firewall simulation readout + log tags (added by the 3D scene) */
+  .sim-hud{
+    display:flex;flex-wrap:wrap;align-items:center;gap:6px 9px;margin-top:22px;
+    font-family:var(--font-mono);font-size:12px;color:var(--text-faint);
+    text-shadow:0 1px 12px rgba(10,14,16,.95);animation:simIn .9s ease .2s both;
+  }
+  .sim-hud b{color:#FF6B6B;font-weight:600;}
+  .sim-hud .sim-hint{color:var(--text-dim);}
+  .sim-hud .sim-dot{width:6px;height:6px;border-radius:50%;background:var(--up);animation:pulse 2.2s infinite;}
+  @keyframes simIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  @media (max-width:600px){
+    .sim-hud{font-size:11px;}
+    .sim-hud .sim-sep2{display:none;}
+    .sim-hud .sim-hint{flex-basis:100%;padding-left:15px;}
+  }
+  #scene-labels{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;}
+  #scene-labels .sl{
+    position:absolute;left:0;top:0;white-space:nowrap;opacity:0;will-change:transform,opacity;
+    font-family:var(--font-mono);font-size:11px;line-height:1;color:var(--text-dim);
+    background:rgba(10,14,16,.8);border:1px solid rgba(255,93,93,.35);border-radius:4px;padding:5px 8px;
+  }
+  #scene-labels .sl b{color:#FF6B6B;font-weight:600;margin-right:7px;letter-spacing:.04em;}
+  #scene-labels .sl.ok{border-color:rgba(95,214,139,.4);}
+  #scene-labels .sl.ok b{color:var(--up);}
+  @media (prefers-reduced-motion:reduce){
+    #scene3d, #vignette{display:none;}
+  }
+  @media print{
+    #scene3d, #vignette, #packets, #progress, #scene-labels, .sim-hud{display:none !important;}
+  }
 </style>
 <script>document.documentElement.classList.add('js');</script>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
 
@@ -777,6 +840,8 @@
 </div>
 
 <div id="progress" aria-hidden="true"></div>
+<canvas id="scene3d" aria-hidden="true"></canvas>
+<div id="vignette" aria-hidden="true"></div>
 <canvas id="packets" aria-hidden="true"></canvas>
 
 <script>
@@ -858,9 +923,9 @@
     })();
   }
 
-  /* ---------- packet traffic on the 48px grid ---------- */
+  /* ---------- packet traffic on the 48px grid (2D fallback for the 3D scene) ---------- */
   var cv = document.getElementById('packets'), ctx = cv.getContext('2d');
-  var G = 48, W, H, dpr, packets = [], running = true;
+  var G = 48, W, H, dpr, packets = [], running = false, inited2D = false, active2D = false;
   function size(){
     dpr = Math.min(devicePixelRatio || 1, 2);
     W = innerWidth; H = innerHeight;
@@ -892,13 +957,26 @@
     }
     requestAnimationFrame(step);
   }
-  size(); addEventListener('resize', size);
-  var count = innerWidth < 600 ? 7 : 14;
-  for (var i = 0; i < count; i++){ var p = spawn(); p.p = Math.random() * (p.h ? W : H); packets.push(p); }
-  document.addEventListener('visibilitychange', function(){
-    running = !document.hidden; if (running) requestAnimationFrame(step);
-  });
-  requestAnimationFrame(step);
+  function start2D(){
+    if (active2D) return; active2D = true;
+    if (!inited2D){
+      inited2D = true;
+      size(); addEventListener('resize', size);
+      var count = innerWidth < 600 ? 7 : 14;
+      for (var i = 0; i < count; i++){ var p = spawn(); p.p = Math.random() * (p.h ? W : H); packets.push(p); }
+      document.addEventListener('visibilitychange', function(){
+        running = active2D && !document.hidden; if (running) requestAnimationFrame(step);
+      });
+    }
+    running = true; requestAnimationFrame(step);
+  }
+  function stop2D(){ active2D = false; running = false; if (W) ctx.clearRect(0, 0, W, H); }
+  window.__packets2D = { start: start2D, stop: stop2D };
+
+  /* the WebGL scene (module script below) takes over when it can; otherwise fall back to 2D */
+  var saveData = !!(navigator.connection && navigator.connection.saveData);
+  if (saveData || !('noModule' in HTMLScriptElement.prototype)) start2D();
+  else setTimeout(function(){ if (window.__scene3d !== 'running') start2D(); }, 4000);
 
   /* ---------- boot sequence (once per visit, skippable) ---------- */
   function start(){ ready(); decrypt(document.querySelector('.hero h1')); }
@@ -936,6 +1014,1245 @@
   var skip = document.createElement('span'); skip.className = 'skip'; skip.textContent = 'click or press any key to skip';
   pre.parentNode.appendChild(skip);
 })();
+</script>
+
+<script type="module">
+/* =========================================================
+   3D DEFENSE GRID (Three.js r160, WebGL)
+   Network traffic routes across a grid as 3D arrowheads.
+   Red threat packets home in on a protected core; the IDS
+   radar locks onto them and the firewall shield drops them.
+   Click the grid to fire a test attack. The camera glides
+   overhead as you scroll. Everything here is a simulation.
+   Falls back to the 2D canvas when WebGL isn't available.
+   ========================================================= */
+const root = document.documentElement;
+const motionOK = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+const saveData = !!(navigator.connection && navigator.connection.saveData);
+
+if (motionOK && !saveData) {
+  window.__scene3d = 'loading';
+  startScene().catch((err) => {
+    console.warn('[scene3d] WebGL scene unavailable, using the 2D fallback.', err);
+    window.__scene3d = 'failed';
+    if (window.__packets2D) window.__packets2D.start();
+  });
+}
+
+async function startScene() {
+  const THREE = await import('three');
+  const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+    import('three/addons/postprocessing/EffectComposer.js'),
+    import('three/addons/postprocessing/RenderPass.js'),
+    import('three/addons/postprocessing/UnrealBloomPass.js'),
+    import('three/addons/postprocessing/OutputPass.js'),
+  ]);
+
+  /* ---------- renderer ---------- */
+  const canvas = document.getElementById('scene3d');
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const mobile = touch || Math.min(screen.width, screen.height) < 700;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance' });
+  const ext = renderer.extensions;
+  const canBloom = renderer.capabilities.isWebGL2 && (ext.has('EXT_color_buffer_half_float') || ext.has('EXT_color_buffer_float'));
+
+  /* ---------- palette: the site's tokens plus a threat red, converted to linear ---------- */
+  const col = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
+  const BG = col('#0A0E10');
+  const THREAT = 2;
+  const KINDS = [
+    { color: col('#5FD68B'), speed: [6.0, 8.5] },    // allowed traffic
+    { color: col('#6FA8FF'), speed: [9.5, 12.5] },   // fast lane
+    { color: col('#FF4D57'), speed: [7.0, 9.0] },    // threats: home in on the core
+  ];
+  const ARROW_GAIN = 1.9, TRAIL_GAIN = 1.1, POOL_GAIN = 0.4;
+  const SPARK = [col('#FF4D57', 2.2), col('#FFB454', 2.2), col('#FFF1E0', 2.6)];
+
+  /* ---------- world ---------- */
+  const CELL = 4, FOG = 0.0165, MAXD = 105, K = 10;
+  const NMAX = mobile ? 26 : 38;   // packets, threats included
+  const NN = mobile ? 20 : 30;     // router nodes
+  const NM = mobile ? 60 : 130;    // floating motes
+  const NS = mobile ? 140 : 220;   // impact sparks
+  const CORE = new THREE.Vector3(0, 0, mobile ? -40 : -24);   // the protected asset
+  const SH_R = mobile ? 6.0 : 5.6, SH_Y = mobile ? -3.0 : 1.0;  // firewall shield: sphere radius, centre height
+  const SH_R0 = Math.sqrt(SH_R * SH_R - (0.3 - SH_Y) ** 2);   // shield radius at packet height
+  const CORE_Y = Math.max(1.4, SH_Y + SH_R * 0.42);
+  const RADAR_R = 22, SWEEP = 2.1;                             // IDS radar range, sweep speed (rad/s)
+
+  const scene = new THREE.Scene();
+  scene.background = BG;
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1200);
+  camera.rotation.order = 'YXZ';
+
+  const U = {
+    uTime: { value: 0 }, uFog: { value: FOG }, uDpr: { value: 1 }, uCell: { value: CELL },
+    uBg: { value: BG }, uGlow: { value: col('#0B2220') }, uGlowHi: { value: col('#123C31') },
+    uReveal: { value: new THREE.Vector4(CORE.x, CORE.z, -40, 1) },   // boot wave: x, z, radius, active
+  };
+  const EXT = { derivatives: true };
+  const ADD = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, extensions: EXT };
+  const ON_FLOOR = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 };
+
+  const COMMON = /* glsl */`
+    uniform float uTime, uFog, uDpr, uCell;
+    uniform vec3 uBg, uGlow, uGlowHi;
+    uniform vec4 uReveal;
+    vec3 skyColor(vec3 d){
+      float h = d.y;
+      vec3 c = uBg + uGlow * exp(-abs(h) * 5.0) + uGlowHi * exp(-abs(h) * 26.0);
+      return c * (1.0 - 0.3 * smoothstep(0.05, 0.8, h));
+    }
+    float fogAmount(float dist){ return 1.0 - exp(-uFog * uFog * dist * dist); }
+    float revealMask(vec2 p){
+      if (uReveal.w < 0.5) return 1.0;
+      return 1.0 - smoothstep(uReveal.z - 5.0, uReveal.z, length(p - uReveal.xy));
+    }
+    float gridLines(vec2 p, float spacing, float px){
+      vec2 g = p / spacing;
+      vec2 fw = max(fwidth(g), vec2(1e-5));
+      vec2 d = abs(fract(g - 0.5) - 0.5) / fw;
+      float m = 1.0 - min(min(d.x, d.y) / px, 1.0);
+      return m * (1.0 - smoothstep(0.15, 0.4, max(fw.x, fw.y)));
+    }
+    float gridMarks(vec2 p, float spacing, float arm){
+      vec2 q = abs(fract(p / spacing - 0.5) - 0.5) * spacing;
+      vec2 fw = max(fwidth(p), vec2(1e-5));
+      float th = 0.8 * uDpr;
+      float ax = (1.0 - smoothstep(th - 0.5, th + 0.5, q.y / fw.y)) * (1.0 - smoothstep(arm - fw.x, arm + fw.x, q.x));
+      float az = (1.0 - smoothstep(th - 0.5, th + 0.5, q.x / fw.x)) * (1.0 - smoothstep(arm - fw.y, arm + fw.y, q.y));
+      return max(ax, az) * (1.0 - smoothstep(0.05, 0.14, max(fw.x, fw.y) / spacing));
+    }
+  `;
+  const WORLD_VS = /* glsl */`
+    varying vec3 vW;
+    void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }
+  `;
+  const BARY_VS = /* glsl */`
+    attribute vec3 aBary;
+    varying vec3 vBary; varying vec3 vW; varying vec3 vN;
+    void main(){
+      vBary = aBary; vN = normalize(mat3(modelMatrix) * normal);
+      vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }
+  `;
+  const withBary = (g) => {
+    const n = g.attributes.position.count, b = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) b[i * 3 + (i % 3)] = 1;
+    g.setAttribute('aBary', new THREE.BufferAttribute(b, 3));
+    return g;
+  };
+
+  /* ---------- sky dome with a horizon glow ---------- */
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
+    uniforms: U, vertexShader: WORLD_VS, side: THREE.BackSide, depthWrite: false, extensions: EXT,
+    fragmentShader: COMMON + /* glsl */`
+      varying vec3 vW;
+      void main(){
+        gl_FragColor = vec4(skyColor(normalize(vW - cameraPosition)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  sky.frustumCulled = false; sky.renderOrder = -1;
+  scene.add(sky);
+
+  /* ---------- network floor: lanes, junction marks, IDS radar around the core ---------- */
+  const floorMat = new THREE.ShaderMaterial({
+    uniforms: {
+      ...U,
+      uMinorCol: { value: col('#5FD68B', 0.05) }, uMajorCol: { value: col('#5FD68B', 0.11) },
+      uMarkCol: { value: col('#5FD68B', 0.3) }, uRevealCol: { value: col('#5FD68B', 0.9) },
+      uPointer: { value: new THREE.Vector3() }, uPointerCol: { value: col('#6FA8FF', 0.5) },
+      uPingCol: { value: col('#FF4D57', 1.2) },
+      uPings: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
+      uRadar: { value: new THREE.Vector4(CORE.x, CORE.z, 0, RADAR_R) },
+      uRadarCol: { value: col('#5FD68B', 0.55) }, uShieldCol: { value: col('#6FA8FF', 0.6) },
+      uShieldR0: { value: SH_R0 }, uRadarOn: { value: 0 },
+    },
+    vertexShader: WORLD_VS, extensions: EXT,
+    fragmentShader: COMMON + /* glsl */`
+      uniform vec3 uMinorCol, uMajorCol, uMarkCol, uRevealCol, uPointer, uPointerCol, uPingCol, uRadarCol, uShieldCol;
+      uniform vec4 uPings[4];
+      uniform vec4 uRadar;
+      uniform float uShieldR0, uRadarOn;
+      varying vec3 vW;
+      void main(){
+        vec2 p = vW.xz;
+        float px = 0.85 * uDpr;
+        float minor = gridLines(p, uCell, px);
+        float major = gridLines(p, uCell * 4.0, px * 1.3);
+        float marks = gridMarks(p, uCell, 0.34);
+        float lit = clamp(minor + major + marks, 0.0, 1.0);
+        vec3 lines = uMinorCol * minor + uMajorCol * major + uMarkCol * marks;
+
+        // IDS radar: sweep, range rings, and the shield's footprint around the core
+        vec2 rp = p - uRadar.xy;
+        float rr = length(rp);
+        float fr = max(fwidth(rr), 1e-4);
+        float inR = 1.0 - smoothstep(uRadar.w * 0.7, uRadar.w, rr);
+        float sweep = exp(-mod(uRadar.z - atan(rp.y, rp.x), 6.2831853) * 2.6) * inR;
+        float rings = 0.0;
+        for (int i = 1; i <= 3; i++) rings += 1.0 - smoothstep(fr * 0.7, fr * 1.8, abs(rr - uRadar.w * float(i) / 3.4));
+        float foot = 1.0 - smoothstep(fr, fr * 2.5, abs(rr - uShieldR0));
+        float plate = 1.0 - smoothstep(uShieldR0 - 0.5, uShieldR0, rr);
+        lines += uRadarOn * (uRadarCol * (sweep * (0.02 + lit * 0.6) + rings * inR * 0.12)
+               + uShieldCol * (foot * 0.9 + plate * (0.012 + lit * 0.12)));
+
+        float pd = length(p - uPointer.xy);
+        lines += uPointerCol * exp(-pd * pd / 36.0) * uPointer.z * (lit * 1.8 + 0.02);
+
+        for (int i = 0; i < 4; i++){
+          vec4 g = uPings[i];
+          if (g.w <= 0.0) continue;
+          float k = (length(p - g.xy) - g.z * 12.0) / 0.5;
+          lines += uPingCol * exp(-k * k) * exp(-g.z * 1.6) * g.w * (0.45 + lit * 2.6);
+        }
+
+        if (uReveal.w > 0.5){
+          float k = (length(p - uReveal.xy) - uReveal.z) / 1.8;
+          lines = lines * revealMask(p) + uRevealCol * exp(-k * k) * (0.15 + lit * 1.6);
+        }
+
+        vec3 V = vW - cameraPosition;
+        float dist = length(V);
+        gl_FragColor = vec4(mix(uBg + lines, skyColor(V / dist), fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(700, 700).rotateX(-Math.PI / 2), floorMat);
+  floor.frustumCulled = false;
+  scene.add(floor);
+
+  /* ---------- firewall shield: a hexagonal (Goldberg) dome with impact ripples ---------- */
+  const hits = Array.from({ length: 6 }, () => new THREE.Vector4(0, 1, 0, -100));
+  const shieldMat = new THREE.ShaderMaterial({
+    uniforms: {
+      ...U, uShieldCol: { value: col('#6FA8FF', 0.85) }, uHitCol: { value: col('#FF6A5A', 1.5) },
+      uHits: { value: hits }, uCenter: { value: new THREE.Vector3(CORE.x, SH_Y, CORE.z) }, uPowerH: { value: -1.3 }, uDim: { value: 1 },
+    },
+    ...ADD,
+    vertexShader: BARY_VS,
+    fragmentShader: COMMON + /* glsl */`
+      uniform vec3 uShieldCol, uHitCol, uCenter;
+      uniform vec4 uHits[6];
+      uniform float uPowerH, uDim;
+      varying vec3 vBary; varying vec3 vW; varying vec3 vN;
+      void main(){
+        vec3 n = normalize(vW - uCenter);
+        vec3 V = cameraPosition - vW; float dist = length(V); V /= dist;
+        float mx = max(max(vBary.x, vBary.y), vBary.z), mn = min(min(vBary.x, vBary.y), vBary.z);
+        float d = mx - (vBary.x + vBary.y + vBary.z - mx - mn);   // 0 on the hexagon borders
+        float fw = max(fwidth(d), 1e-4);
+        float edge = 1.0 - smoothstep(fw * 0.6, fw * 1.8, d);
+        float inner = smoothstep(0.0, 0.5, d);
+        float fres = pow(1.0 - abs(dot(n, V)), 3.0);
+        float raise = 1.0 - smoothstep(uPowerH - 0.25, uPowerH, n.y);   // deploys from the floor up
+        float kp = (n.y - uPowerH) / 0.05;
+        float deploy = exp(-kp * kp);
+        float ks = (n.y - (fract(uTime * 0.11) * 2.6 - 1.3)) / 0.05;  // refresh scan climbing the dome
+        float scan = exp(-ks * ks);
+        float hot = 0.0, ring = 0.0;
+        for (int i = 0; i < 6; i++){
+          float age = uTime - uHits[i].w;
+          if (age < 0.0 || age > 2.5) continue;
+          float ang = acos(clamp(dot(n, uHits[i].xyz), -1.0, 1.0));
+          hot += exp(-ang * ang * 70.0) * exp(-age * 2.8);
+          float k = (ang - age * 1.3) / 0.07;
+          ring += exp(-k * k) * exp(-age * 1.8);
+        }
+        float e = edge * (0.1 + fres * 0.9 + scan * 0.6 + ring * 2.2 + hot * 3.0);
+        float f = fres * 0.05 + (hot * 1.1 + ring * 0.3) * (1.0 - inner * 0.6);
+        vec3 c = (uShieldCol * (e + f) + uHitCol * hot * 1.2) * raise + uShieldCol * deploy * edge * 1.4;
+        if (!gl_FrontFacing) c *= 0.4;
+        gl_FragColor = vec4(c * uDim * (1.0 - fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const shield = new THREE.Mesh(withBary(new THREE.IcosahedronGeometry(1, mobile ? 3 : 4)), shieldMat);
+  shield.position.set(CORE.x, SH_Y, CORE.z); shield.scale.setScalar(SH_R);
+  shield.frustumCulled = false;
+  scene.add(shield);
+
+  /* ---------- the protected core: a faceted crystal with orbit rings ---------- */
+  const coreMat = new THREE.ShaderMaterial({
+    uniforms: { ...U, uCoreCol: { value: col('#5FD68B', 1.5) }, uEdgeCol: { value: col('#DCFFE9', 2.4) }, uPulse: { value: 0 } },
+    extensions: EXT, vertexShader: BARY_VS,
+    fragmentShader: COMMON + /* glsl */`
+      uniform vec3 uCoreCol, uEdgeCol; uniform float uPulse;
+      varying vec3 vBary; varying vec3 vW; varying vec3 vN;
+      void main(){
+        vec3 n = normalize(vN);
+        vec3 V = cameraPosition - vW; float dist = length(V); V /= dist;
+        float mn = min(min(vBary.x, vBary.y), vBary.z);
+        float fw = max(fwidth(mn), 1e-4);
+        float edge = 1.0 - smoothstep(fw * 0.8, fw * 2.2, mn);
+        float diff = 0.25 + 0.75 * max(dot(n, normalize(vec3(0.4, 1.0, 0.3))), 0.0);
+        float rim = pow(1.0 - max(dot(n, V), 0.0), 2.0);
+        vec3 c = uCoreCol * (diff * 0.5 + rim * 0.8) * (1.0 + uPulse) + uEdgeCol * edge * (0.7 + uPulse);
+        gl_FragColor = vec4(mix(c, skyColor(-V), fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const core = new THREE.Mesh(withBary(new THREE.IcosahedronGeometry(1, 0)), coreMat);
+  core.position.set(CORE.x, CORE_Y, CORE.z);
+  scene.add(core);
+  const ringMat = new THREE.MeshBasicMaterial({ color: col('#5FD68B', 1.3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const ringA = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.018, 6, 128), ringMat);
+  const ringB = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.014, 6, 128), ringMat);
+  ringA.position.copy(core.position); ringB.position.copy(core.position);
+  scene.add(ringA, ringB);
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = 64;
+  const g2d = glowCanvas.getContext('2d'), grad = g2d.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.3, 'rgba(255,255,255,0.3)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g2d.fillStyle = grad; g2d.fillRect(0, 0, 64, 64);
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+  glowTex.colorSpace = THREE.SRGBColorSpace;
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: col('#5FD68B', 1.1), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  glow.position.copy(core.position);
+  scene.add(glow);
+
+  /* ---------- packet trails: a V-shaped light ribbon that bends at every turn ---------- */
+  const VPP = K * 3;
+  const tPos = new Float32Array(NMAX * VPP * 3), tT = new Float32Array(NMAX * VPP);
+  const tV = new Float32Array(NMAX * VPP), tCol = new Float32Array(NMAX * VPP * 3);
+  for (let i = 0; i < NMAX * K; i++) { tV[i * 3] = 1; tV[i * 3 + 2] = 1; }
+  const idx = [];
+  for (let n = 0; n < NMAX; n++) for (let i = 0; i < K - 1; i++) {
+    const a = (n * K + i) * 3, b = a + 3;
+    idx.push(a, a + 1, b, a + 1, b + 1, b, a + 1, a + 2, b + 1, a + 2, b + 2, b + 1);
+  }
+  const dyn = (arr, size) => new THREE.BufferAttribute(arr, size).setUsage(THREE.DynamicDrawUsage);
+  const trailGeo = new THREE.BufferGeometry();
+  trailGeo.setAttribute('position', dyn(tPos, 3));
+  trailGeo.setAttribute('aT', dyn(tT, 1));
+  trailGeo.setAttribute('aV', new THREE.BufferAttribute(tV, 1));
+  trailGeo.setAttribute('aColor', dyn(tCol, 3));
+  trailGeo.setIndex(idx);
+  const trails = new THREE.Mesh(trailGeo, new THREE.ShaderMaterial({
+    uniforms: U, ...ADD,
+    vertexShader: /* glsl */`
+      attribute float aT; attribute float aV; attribute vec3 aColor;
+      uniform float uFog;
+      varying float vT; varying float vV; varying vec3 vC; varying float vFog;
+      void main(){
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        float d = length(w.xyz - cameraPosition);
+        vFog = 1.0 - exp(-uFog * uFog * d * d) * mix(0.45, 1.0, smoothstep(2.0, 8.0, d));
+        vT = aT; vV = aV; vC = aColor;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: /* glsl */`
+      varying float vT; varying float vV; varying vec3 vC; varying float vFog;
+      void main(){
+        float along = pow(clamp(1.0 - vT, 0.0, 1.0), 1.5);
+        float core = exp(-vV * vV * 60.0);
+        float haze = (1.0 - vV) * (1.0 - vV);
+        float a = along * (core * 1.6 + haze * 0.3) + exp(-vT * 14.0) * core * 1.2;
+        gl_FragColor = vec4(vC * a * (1.0 - vFog), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  trails.frustumCulled = false;
+  scene.add(trails);
+
+  /* ---------- packet heads: faceted 3D arrowheads (instanced) ---------- */
+  function arrowGeometry() {
+    const T = [0, 0.10, 0.62], L = [-0.42, 0.04, -0.38], R = [0.42, 0.04, -0.38];
+    const N = [0, 0.08, -0.16], Up = [0, 0.30, -0.08], D = [0, -0.05, -0.06];
+    const faces = [[T, L, Up], [T, Up, R], [L, N, Up], [Up, N, R], [T, D, L], [T, R, D], [L, D, N], [D, R, N]];
+    const center = new THREE.Vector3(0, 0.08, -0.02);
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), mid = new THREE.Vector3();
+    const pos = [], nor = [];
+    for (const f of faces) {
+      a.fromArray(f[0]); b.fromArray(f[1]); c.fromArray(f[2]);
+      const n = e1.subVectors(b, a).cross(e2.subVectors(c, a)).normalize();
+      mid.copy(a).add(b).add(c).divideScalar(3).sub(center);
+      if (n.dot(mid) < 0) { const s = b.clone(); b.copy(c); c.copy(s); n.negate(); }
+      pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+      for (let k = 0; k < 3; k++) nor.push(n.x, n.y, n.z);
+    }
+    const g = new THREE.InstancedBufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    return g;
+  }
+  const inst = (n, size) => new THREE.InstancedBufferAttribute(new Float32Array(n * size), size).setUsage(THREE.DynamicDrawUsage);
+  const arrowGeo = arrowGeometry();
+  const aPos = inst(NMAX, 3), aRot = inst(NMAX, 2), aCol = inst(NMAX, 4);
+  arrowGeo.setAttribute('aPos', aPos); arrowGeo.setAttribute('aRot', aRot); arrowGeo.setAttribute('aCol', aCol);
+  arrowGeo.instanceCount = NMAX;
+  const arrows = new THREE.Mesh(arrowGeo, new THREE.ShaderMaterial({
+    uniforms: { ...U, uScale: { value: mobile ? 1.3 : 1.15 } }, extensions: EXT,
+    vertexShader: /* glsl */`
+      attribute vec3 aPos; attribute vec2 aRot; attribute vec4 aCol;
+      uniform float uScale;
+      varying vec3 vN; varying vec3 vW; varying vec3 vC;
+      void main(){
+        float cy = cos(aRot.x), sy = sin(aRot.x), cr = cos(aRot.y), sr = sin(aRot.y);
+        mat3 R = mat3(cy, 0.0, -sy, 0.0, 1.0, 0.0, sy, 0.0, cy) * mat3(cr, sr, 0.0, -sr, cr, 0.0, 0.0, 0.0, 1.0);
+        vec3 p = R * (position * uScale * aCol.w) + aPos;
+        vN = R * normal; vW = p; vC = aCol.rgb;
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: COMMON + /* glsl */`
+      varying vec3 vN; varying vec3 vW; varying vec3 vC;
+      void main(){
+        vec3 n = normalize(vN);
+        vec3 V = cameraPosition - vW; float dist = length(V); V /= dist;
+        float diff = 0.35 + 0.65 * max(dot(n, normalize(vec3(0.35, 1.0, 0.25))), 0.0);
+        float rim = pow(1.0 - max(dot(n, V), 0.0), 2.0);
+        vec3 lit = vC * (diff + rim * 1.4) * mix(0.4, 1.0, smoothstep(2.0, 8.0, dist));
+        gl_FragColor = vec4(mix(lit, skyColor(-V), fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  arrows.frustumCulled = false;
+  scene.add(arrows);
+
+  /* ---------- floor quads: light pools under packets, lock-on reticles for threats ---------- */
+  const QUAD = [-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1];
+  const floorQuads = (n) => {
+    const g = new THREE.InstancedBufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(QUAD, 3));
+    g.setIndex([0, 2, 1, 0, 3, 2]);
+    g.instanceCount = n;
+    return g;
+  };
+  const poolGeo = floorQuads(NMAX), pPos = inst(NMAX, 2), pCol = inst(NMAX, 3);
+  poolGeo.setAttribute('aPos', pPos); poolGeo.setAttribute('aCol', pCol);
+  const pools = new THREE.Mesh(poolGeo, new THREE.ShaderMaterial({
+    uniforms: U, ...ADD, ...ON_FLOOR,
+    vertexShader: /* glsl */`
+      attribute vec2 aPos; attribute vec3 aCol;
+      varying vec3 vW; varying vec2 vL; varying vec3 vC;
+      void main(){
+        vec3 w = vec3(aPos.x + position.x * 2.2, 0.0, aPos.y + position.z * 2.2);
+        vW = w; vL = position.xz; vC = aCol;
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: COMMON + /* glsl */`
+      varying vec3 vW; varying vec2 vL; varying vec3 vC;
+      void main(){
+        float r2 = dot(vL, vL);
+        float fall = exp(-r2 * 3.2) * (1.0 - smoothstep(0.75, 1.0, r2));
+        float lit = clamp(gridLines(vW.xz, uCell, 0.9 * uDpr) + gridMarks(vW.xz, uCell, 0.34), 0.0, 1.0);
+        float dist = length(vW - cameraPosition);
+        gl_FragColor = vec4(vC * fall * (0.025 + lit * 0.9) * (1.0 - fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  pools.frustumCulled = false;
+  scene.add(pools);
+
+  const retGeo = floorQuads(NMAX), rPos = inst(NMAX, 2), rInfo = inst(NMAX, 2);   // info: lock time, visible
+  retGeo.setAttribute('aPos', rPos); retGeo.setAttribute('aInfo', rInfo);
+  const reticles = new THREE.Mesh(retGeo, new THREE.ShaderMaterial({
+    uniforms: { ...U, uRetCol: { value: col('#FF4D57', 1.6) } }, ...ADD, ...ON_FLOOR,
+    vertexShader: /* glsl */`
+      attribute vec2 aPos; attribute vec2 aInfo;
+      varying vec3 vW; varying vec2 vL; varying vec2 vInfo;
+      void main(){
+        vec3 w = vec3(aPos.x + position.x * 1.8, 0.0, aPos.y + position.z * 1.8);
+        vW = w; vL = position.xz * 1.8; vInfo = aInfo;
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: COMMON + /* glsl */`
+      uniform vec3 uRetCol;
+      varying vec3 vW; varying vec2 vL; varying vec2 vInfo;
+      void main(){
+        if (vInfo.y < 0.5) discard;
+        float age = max(uTime - vInfo.x, 0.0);
+        float e = 1.0 - pow(1.0 - clamp(age / 0.35, 0.0, 1.0), 3.0);
+        float ang = (1.0 - e) * 0.785;
+        vec2 q = abs(mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * vL);
+        float s = mix(1.6, 0.95, e), arm = 0.4;
+        float fw = fwidth(q.x) + fwidth(q.y);
+        float th = max(0.04, fw);
+        float vx = (1.0 - smoothstep(th, th + fw, abs(q.x - s))) * step(s - arm, q.y) * step(q.y, s + th);
+        float vy = (1.0 - smoothstep(th, th + fw, abs(q.y - s))) * step(s - arm, q.x) * step(q.x, s + th);
+        float blink = age < 0.6 ? 0.4 + 0.6 * step(0.5, fract(age * 8.0)) : 0.85;
+        float dist = length(vW - cameraPosition);
+        gl_FragColor = vec4(uRetCol * max(vx, vy) * blink * (1.0 - fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  reticles.frustumCulled = false;
+  scene.add(reticles);
+
+  /* ---------- router nodes: port pads that ring when traffic passes, some with light beams ---------- */
+  const nPos = inst(NN, 2), nInfo = inst(NN, 4);       // info: last hit, born, seed, beam height
+  const nPosA = nPos.array, nInfoA = nInfo.array;
+  const nodeGeo = floorQuads(NN);
+  nodeGeo.setAttribute('aPos', nPos); nodeGeo.setAttribute('aInfo', nInfo);
+  const nodeMesh = new THREE.Mesh(nodeGeo, new THREE.ShaderMaterial({
+    uniforms: { ...U, uNodeCol: { value: col('#5FD68B', 0.55) }, uHitCol: { value: col('#9FE8C0', 0.9) } },
+    ...ADD, ...ON_FLOOR,
+    vertexShader: /* glsl */`
+      attribute vec2 aPos; attribute vec4 aInfo;
+      varying vec3 vW; varying vec2 vL; varying vec4 vInfo;
+      void main(){
+        vec3 w = vec3(aPos.x + position.x * 4.0, 0.0, aPos.y + position.z * 4.0);
+        vW = w; vL = position.xz * 4.0; vInfo = aInfo;
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: COMMON + /* glsl */`
+      uniform vec3 uNodeCol, uHitCol;
+      varying vec3 vW; varying vec2 vL; varying vec4 vInfo;
+      void main(){
+        float age = max(uTime - vInfo.x, 0.0);
+        float hit = exp(-age * 3.5);
+        vec2 a = abs(vL);
+        float sq = max(a.x, a.y);
+        float fw = fwidth(sq) * 1.5;
+        float outline = 1.0 - smoothstep(0.045, 0.045 + fw, abs(sq - 0.46));
+        float core = 1.0 - smoothstep(0.15, 0.15 + fw, sq);
+        float r = length(vL);
+        float k = (r - age * 3.6) / 0.13;
+        float ring = exp(-k * k) * exp(-age * 2.8) * (1.0 - smoothstep(2.6, 3.6, r));
+        float breathe = 0.6 + 0.3 * sin(uTime * 1.6 + vInfo.z * 6.2831);
+        float born = smoothstep(vInfo.y, vInfo.y + 0.9, uTime) * revealMask(vW.xz);
+        vec3 c = uNodeCol * (outline * (breathe + hit * 3.0) + core * (0.5 + hit * 4.0)) + uHitCol * ring;
+        float dist = length(vW - cameraPosition);
+        gl_FragColor = vec4(c * born * (1.0 - fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  nodeMesh.frustumCulled = false;
+  scene.add(nodeMesh);
+
+  const beamGeo = new THREE.InstancedBufferGeometry();
+  beamGeo.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0], 3));
+  beamGeo.setIndex([0, 1, 2, 0, 2, 3]);
+  beamGeo.setAttribute('aPos', nPos); beamGeo.setAttribute('aInfo', nInfo);
+  beamGeo.instanceCount = NN;
+  const beams = new THREE.Mesh(beamGeo, new THREE.ShaderMaterial({
+    uniforms: { ...U, uBeamCol: { value: col('#5FD68B', 0.9) } }, ...ADD,
+    vertexShader: /* glsl */`
+      attribute vec2 aPos; attribute vec4 aInfo;
+      varying vec2 vUv; varying vec4 vInfo; varying vec3 vW;
+      void main(){
+        vec3 base = vec3(aPos.x, 0.0, aPos.y);
+        vec3 toCam = cameraPosition - base;
+        vec3 side = normalize(vec3(-toCam.z, 0.0, toCam.x) + vec3(1e-4, 0.0, 0.0));
+        vec3 w = base + side * position.x * 0.07 + vec3(0.0, position.y * aInfo.w, 0.0);
+        vUv = position.xy; vInfo = aInfo; vW = w;
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: COMMON + /* glsl */`
+      uniform vec3 uBeamCol;
+      varying vec2 vUv; varying vec4 vInfo; varying vec3 vW;
+      void main(){
+        if (vInfo.w <= 0.0) discard;
+        float age = max(uTime - vInfo.x, 0.0);
+        float hit = exp(-age * 2.5);
+        float across = max(1.0 - abs(vUv.x), 0.0);
+        float up = pow(max(1.0 - vUv.y, 0.0), 1.6);
+        float k = (vUv.y - age * 1.6) / 0.08;
+        float climb = exp(-k * k) * exp(-age * 1.2);
+        float born = smoothstep(vInfo.y, vInfo.y + 0.9, uTime) * revealMask(vW.xz);
+        float a = across * across * (up * (0.22 + hit * 1.2) + climb * 2.0);
+        float dist = length(vW - cameraPosition);
+        gl_FragColor = vec4(uBeamCol * a * born * (1.0 - fogAmount(dist)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  beams.frustumCulled = false;
+  scene.add(beams);
+
+  /* ---------- floating motes for depth ---------- */
+  const mPos = new Float32Array(NM * 3), mSeed = new Float32Array(NM);
+  const moteGeo = new THREE.BufferGeometry();
+  moteGeo.setAttribute('position', dyn(mPos, 3));
+  moteGeo.setAttribute('aSeed', new THREE.BufferAttribute(mSeed, 1));
+  const motes = new THREE.Points(moteGeo, new THREE.ShaderMaterial({
+    uniforms: { ...U, uMoteA: { value: col('#5FD68B', 0.5) }, uMoteB: { value: col('#6FA8FF', 0.5) } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      attribute float aSeed;
+      uniform float uDpr, uFog;
+      varying float vA; varying float vSeed;
+      void main(){
+        vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0);
+        float d = max(-mv.z, 0.1);
+        gl_PointSize = clamp(10.0 / d, 0.7, 3.0) * uDpr;
+        vA = exp(-uFog * uFog * d * d);
+        vSeed = aSeed;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      uniform float uTime; uniform vec3 uMoteA, uMoteB;
+      varying float vA; varying float vSeed;
+      void main(){
+        vec2 q = abs(gl_PointCoord - 0.5) * 2.0;
+        float m = 1.0 - smoothstep(0.5, 1.0, max(q.x, q.y));
+        float tw = 0.5 + 0.5 * sin(uTime * (0.8 + vSeed * 1.7) + vSeed * 40.0);
+        gl_FragColor = vec4(mix(uMoteA, uMoteB, step(0.7, vSeed)) * m * vA * (0.25 + 0.75 * tw), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  motes.frustumCulled = false;
+  scene.add(motes);
+
+  /* ---------- impact sparks ---------- */
+  const sPos = new Float32Array(NS * 3).fill(-50), sCol = new Float32Array(NS * 4);
+  const sVel = new Float32Array(NS * 3), sBorn = new Float32Array(NS).fill(-100), sLife = new Float32Array(NS).fill(1);
+  let sNext = 0;
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', dyn(sPos, 3));
+  sparkGeo.setAttribute('aCol', dyn(sCol, 4));
+  const sparks = new THREE.Points(sparkGeo, new THREE.ShaderMaterial({
+    uniforms: { uDpr: U.uDpr }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      attribute vec4 aCol; uniform float uDpr; varying vec4 vC;
+      void main(){
+        vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0);
+        float d = max(-mv.z, 0.1);
+        gl_PointSize = clamp(26.0 / d, 1.0, 6.0) * uDpr * (0.4 + 0.6 * aCol.a);
+        vC = aCol; gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec4 vC;
+      void main(){
+        vec2 q = gl_PointCoord - 0.5;
+        gl_FragColor = vec4(vC.rgb * exp(-dot(q, q) * 14.0) * vC.a, 1.0);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  sparks.frustumCulled = false;
+  scene.add(sparks);
+
+  /* ---------- bloom ---------- */
+  let composer = null;
+  if (canBloom) {
+    const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: mobile ? 0 : 4 });
+    composer = new EffectComposer(renderer, rt);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.62, 0.42, 0.26));
+    composer.addPass(new OutputPass());
+  }
+
+  /* ---------- helpers & state ---------- */
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const ease = (x) => 1 - Math.pow(1 - clamp(x, 0, 1), 3);
+  const smooth = (x) => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+  const tmp = new THREE.Vector3(), ray = new THREE.Vector3(), hitV = new THREE.Vector3();
+  const FP = [0, 1, 2, 3].map(() => new THREE.Vector3());   // visible floor: near-left, near-right, far-right, far-left
+  let t = 0, W = 1, H = 1, tier = 2, baseFov = 50, horizonFrac = 0.75, footArea = 1000;
+  let warp = 0, lastScroll = scrollY, introT = -1, sceneAge = 0, lastOp = -1, nodesDirty = true, labelVis = 1;
+  let sweep = 0, blocked = 0, lastImpact = -10, lastDropLabel = -10, nextThreat = 1e9, nextScan = 1e9, bootLabel = false;
+  const scanQ = [];
+  const cam = { x: 0, y: 10, z: 0, pitch: -0.3, yaw: 0, fov: 50, snapped: false };
+  const ptr = { x: 0, y: 0, on: 0, s: 0 };
+  const pings = floorMat.uniforms.uPings.value;
+
+  /* ---------- page overlays: a simulation readout under the buttons, and log tags on impacts ---------- */
+  const hud = document.createElement('p');
+  hud.className = 'sim-hud';
+  hud.setAttribute('aria-hidden', 'true');
+  hud.innerHTML = '<span class="sim-dot"></span><span>firewall sim</span><span class="sim-sep">·</span>'
+    + '<span><b class="sim-n">0</b> <span class="sim-what"></span></span><span class="sim-sep sim-sep2">·</span><span class="sim-hint"></span>';
+  hud.querySelector('.sim-what').textContent = mobile ? 'blocked' : 'threats blocked';
+  hud.querySelector('.sim-hint').textContent = touch ? 'tap the grid to test it' : 'click the grid to test it';
+  const hudN = hud.querySelector('.sim-n'), hudWhat = hud.querySelector('.sim-what');
+  const labelLayer = document.createElement('div');
+  labelLayer.id = 'scene-labels';
+  labelLayer.setAttribute('aria-hidden', 'true');
+  const labels = Array.from({ length: 5 }, () => {
+    const el = document.createElement('div'), b = document.createElement('b'), s = document.createElement('span');
+    el.className = 'sl'; el.append(b, s); labelLayer.appendChild(el);
+    return { el, b, s, t0: -10, x: 0, y: 0, z: 0, w: 0, on: false, stack: 0 };
+  });
+  const ATTACKS = [[22, 'ssh brute force'], [3389, 'rdp probe'], [445, 'smb exploit'], [23, 'telnet login'],
+    [1433, 'sql injection'], [8080, 'path traversal'], [5900, 'vnc scan'], [21, 'ftp anon login']];
+  const NETS = ['203.0.113.', '198.51.100.', '192.0.2.'];   // documentation-only ranges (RFC 5737)
+  const randIp = () => NETS[Math.floor(Math.random() * 3)] + (2 + Math.floor(Math.random() * 250));
+  function showLabel(action, detail, x, y, z, cls) {
+    if (labelVis < 0.5) return;
+    let L = labels[0];
+    for (const l of labels) if (l.t0 < L.t0) L = l;
+    let stack = 0;                      // stack tags that are still on screen so they never overlap
+    for (const l of labels) if (l !== L && l.on && t - l.t0 < 2.2) stack++;
+    L.stack = stack;
+    L.b.textContent = action; L.s.textContent = detail;
+    L.el.className = 'sl' + (cls ? ' ' + cls : '');
+    L.t0 = t; L.x = x; L.y = y; L.z = z; L.on = true; L.w = L.el.offsetWidth;
+  }
+
+  function measureHero() {
+    const el = hud.isConnected ? hud : document.querySelector('.hero-actions');
+    if (!el) return;
+    const bottom = el.getBoundingClientRect().bottom + scrollY;
+    horizonFrac = clamp((bottom + (W < 700 ? 28 : 36)) / H, 0.52, 0.9);
+  }
+  function resize() {
+    W = Math.max(1, canvas.clientWidth); H = Math.max(1, canvas.clientHeight);
+    const cap = tier >= 2 ? (mobile ? 1.5 : 1.75) : tier === 1 ? (mobile ? 1.1 : 1.25) : 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, cap);
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(W, H, false);
+    if (composer) { composer.setPixelRatio(dpr); composer.setSize(W, H); }
+    U.uDpr.value = dpr;
+    camera.aspect = W / H;
+    baseFov = camera.aspect < 1 ? 62 : 50;
+    camera.updateProjectionMatrix();
+    measureHero();
+  }
+
+  function floorHit(nx, ny, out) {
+    ray.set(nx, ny, 0.5).unproject(camera).sub(camera.position).normalize();
+    if (ray.y > -0.02) return false;
+    const d = -camera.position.y / ray.y;
+    if (d > 140) return false;
+    out.set(camera.position.x + ray.x * d, 0, camera.position.z + ray.z * d);
+    return true;
+  }
+  function floorPoint(nx, ny, out) {
+    ray.set(nx, ny, 0.5).unproject(camera).sub(camera.position).normalize();
+    const d = ray.y < -1e-3 ? -camera.position.y / ray.y : Infinity;
+    if (d <= MAXD) out.set(camera.position.x + ray.x * d, 0, camera.position.z + ray.z * d);
+    else { const hl = Math.hypot(ray.x, ray.z) || 1e-3; out.set(camera.position.x + ray.x / hl * MAXD, 0, camera.position.z + ray.z / hl * MAXD); }
+  }
+  function footprint() {
+    floorPoint(-1.1, -1.05, FP[0]); floorPoint(1.1, -1.05, FP[1]);
+    floorPoint(1.1, 1.0, FP[2]); floorPoint(-1.1, 1.0, FP[3]);
+    let a = 0;
+    for (let k = 0; k < 4; k++) { const p = FP[k], q = FP[(k + 1) % 4]; a += p.x * q.z - q.x * p.z; }
+    footArea = Math.abs(a) / 2;
+  }
+  function sampleFloor(w0, w1, out) {   // w: 0 = near edge of the screen, 1 = far edge
+    const u = Math.random(), w = w0 + (w1 - w0) * Math.pow(Math.random(), 1.5);
+    const nx = lerp(FP[0].x, FP[1].x, u), nz = lerp(FP[0].z, FP[1].z, u);
+    const fx = lerp(FP[3].x, FP[2].x, u), fz = lerp(FP[3].z, FP[2].z, u);
+    return out.set(lerp(nx, fx, w), 0, lerp(nz, fz, w));
+  }
+  function offscreen(x, z, m = 1.2) {
+    tmp.set(x, 0.3, z).applyMatrix4(camera.matrixWorldInverse);
+    if (tmp.z > -0.5) return true;
+    tmp.applyMatrix4(camera.projectionMatrix);
+    return tmp.x < -m || tmp.x > m || tmp.y < -m || tmp.y > m + 0.05;
+  }
+  function farAway(x, z) {
+    const dx = x - camera.position.x, dz = z - camera.position.z;
+    return dx * dx + dz * dz > (MAXD + 20) * (MAXD + 20);
+  }
+  const coreDist = (x, z) => Math.hypot(x - CORE.x, z - CORE.z);
+
+  /* ---------- router nodes ---------- */
+  const nodes = Array.from({ length: NN }, () => ({ alive: false, key: 0, x: 0, z: 0 }));
+  const nodeMap = new Map();
+  const nKey = (x, z) => (Math.round(x / CELL) + 50000) * 100000 + (Math.round(z / CELL) + 50000);
+  function hideNode(i) {
+    const n = nodes[i];
+    if (n.alive) nodeMap.delete(n.key);
+    n.alive = false;
+    nPosA[i * 2] = 1e5; nPosA[i * 2 + 1] = 1e5; nInfoA[i * 4 + 1] = 1e9;
+    nodesDirty = true;
+  }
+  function placeNode(i, x, z) {
+    hideNode(i);
+    const sx = Math.round(x / CELL) * CELL, sz = Math.round(z / CELL) * CELL, k = nKey(sx, sz);
+    if (nodeMap.has(k) || coreDist(sx, sz) < SH_R0 + 2.5) return false;
+    const n = nodes[i];
+    n.alive = true; n.key = k; n.x = sx; n.z = sz; nodeMap.set(k, i);
+    nPosA[i * 2] = sx; nPosA[i * 2 + 1] = sz;
+    nInfoA[i * 4] = -100; nInfoA[i * 4 + 1] = t; nInfoA[i * 4 + 2] = Math.random();
+    nInfoA[i * 4 + 3] = Math.random() < 0.4 ? 1.0 + 2.4 * Math.pow(Math.random(), 1.6) : 0;
+    return true;
+  }
+  function hitNode(i) { nInfoA[i * 4] = t; nodesDirty = true; }
+  for (let i = 0; i < NN; i++) hideNode(i);
+
+  /* ---------- packets & threats ---------- */
+  const pk = Array.from({ length: NMAX }, () => ({
+    alive: false, kind: 0, x: 0, z: 0, dx: 0, dz: -1, nb: 0, speed: 7, L: 13,
+    hist: [], yaw: 0, roll: 0, born: 0, run: 0, ph: Math.random() * 6.283, tx: 0, tz: 0,
+    lock: -1, tag: null, probe: false,
+  }));
+  function setDir(p, dx, dz) {
+    p.dx = dx; p.dz = dz;
+    if (dx !== 0) p.nb = dx > 0 ? (Math.floor(p.x / CELL + 1e-6) + 1) * CELL : (Math.ceil(p.x / CELL - 1e-6) - 1) * CELL;
+    else p.nb = dz > 0 ? (Math.floor(p.z / CELL + 1e-6) + 1) * CELL : (Math.ceil(p.z / CELL - 1e-6) - 1) * CELL;
+  }
+  function spawnPacket(i, x, z, dir, kind, speed) {
+    const p = pk[i];
+    p.kind = kind == null ? (Math.random() < 0.3 ? 1 : 0) : kind;
+    const k = KINDS[p.kind];
+    p.speed = speed || lerp(k.speed[0], k.speed[1], Math.random());
+    const r = Math.floor(Math.random() * 4);
+    const dx = dir ? dir[0] : [1, -1, 0, 0][r], dz = dir ? dir[1] : [0, 0, 1, -1][r];
+    if (dx !== 0) z = Math.round(z / CELL) * CELL; else x = Math.round(x / CELL) * CELL;
+    p.x = x; p.z = z; p.hist.length = 0; p.hist.push([x, z]);
+    setDir(p, dx, dz);
+    p.yaw = Math.atan2(dx, dz); p.roll = 0; p.born = t; p.run = 0;
+    p.L = 8 + p.speed * 0.6;
+    p.lock = -1; p.tag = null; p.probe = false;
+    p.alive = true;
+  }
+  function atIntersection(p) {
+    p.x = Math.round(p.x / CELL) * CELL; p.z = Math.round(p.z / CELL) * CELL;
+    const ni = nodeMap.get(nKey(p.x, p.z));
+    if (ni !== undefined) hitNode(ni);
+    let ndx = p.dx, ndz = p.dz;
+    if (p.kind === THREAT) {            // threats route toward the core, mostly along the longer axis
+      const ddx = CORE.x - p.x, ddz = CORE.z - p.z, opts = [];
+      if (Math.abs(ddx) > 0.5) opts.push([Math.sign(ddx), 0, Math.abs(ddx)]);
+      if (Math.abs(ddz) > 0.5) opts.push([0, Math.sign(ddz), Math.abs(ddz)]);
+      opts.sort((a, b) => b[2] - a[2]);
+      let pick = opts.length > 1 && Math.random() < 0.3 ? opts[1] : opts[0];
+      if (pick && pick[0] === -p.dx && pick[1] === -p.dz) {
+        pick = opts.find((o) => !(o[0] === -p.dx && o[1] === -p.dz)) || [p.dz, -p.dx];
+      }
+      if (pick) { ndx = pick[0]; ndz = pick[1]; }
+    } else if (Math.random() < (ni !== undefined ? 0.6 : 0.09)) {   // routers route
+      const left = Math.random() < 0.5;
+      ndx = left ? -p.dz : p.dz; ndz = left ? p.dx : -p.dx;
+    }
+    if (ndx !== p.dx || ndz !== p.dz) { p.hist.push([p.x, p.z]); if (p.hist.length > 7) p.hist.shift(); }
+    setDir(p, ndx, ndz);
+  }
+  function advance(p, dt) {
+    let rem = p.speed * dt;
+    p.run += rem;
+    for (let guard = 0; guard < 3 && rem > 0; guard++) {
+      const onX = p.dx !== 0, pos = onX ? p.x : p.z, dir = onX ? p.dx : p.dz;
+      const toB = (p.nb - pos) * dir;
+      if (rem < toB) { if (onX) p.x += p.dx * rem; else p.z += p.dz * rem; break; }
+      if (onX) p.x = p.nb; else p.z = p.nb;
+      rem -= Math.max(toB, 0);
+      atIntersection(p);
+    }
+  }
+  function sampleSpawn(out) {
+    for (let k = 0; k < 8; k++) {
+      sampleFloor(0, 1, out);
+      const R = U.uReveal.value;
+      if (R.w < 0.5 || Math.hypot(out.x - R.x, out.z - R.y) < R.z - 4) return true;
+    }
+    return false;
+  }
+  function freeSlot() {            // a dead slot, else recycle the regular packet farthest from the camera
+    let best = -1, bestD = -1;
+    for (let i = 0; i < NMAX; i++) {
+      const p = pk[i];
+      if (!p.alive) return i;
+      if (p.kind === THREAT) continue;
+      const d = (p.x - camera.position.x) ** 2 + (p.z - camera.position.z) ** 2;
+      if (d > bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  function spawnThreat(opt) {
+    const i = freeSlot();
+    if (i < 0) return false;
+    let x, z;
+    if (opt) { x = opt.x; z = opt.z; }
+    else {
+      let ok = false;
+      for (let k = 0; k < 12 && !ok; k++) { sampleFloor(0.05, 0.9, hitV); const d = coreDist(hitV.x, hitV.z); ok = d > 15 && d < 75; }
+      if (!ok) return false;
+      x = hitV.x; z = hitV.z;
+    }
+    const ddx = CORE.x - x, ddz = CORE.z - z;
+    spawnPacket(i, x, z, Math.abs(ddx) > Math.abs(ddz) ? [Math.sign(ddx) || 1, 0] : [0, Math.sign(ddz) || 1], THREAT, opt && opt.speed);
+    const p = pk[i];
+    p.lock = opt && opt.lock ? t : -1;
+    p.tag = (opt && opt.tag) || null;
+    p.probe = !!(opt && opt.probe);
+    return true;
+  }
+  function pingAt(x, z) {
+    let slot = 0, oldest = -1;
+    for (let k = 0; k < 4; k++) {
+      if (pings[k].w <= 0) { slot = k; break; }
+      if (pings[k].z > oldest) { oldest = pings[k].z; slot = k; }
+    }
+    pings[slot].set(x, z, 0, 1);
+  }
+  function queueScan() {           // an attacker out in the network probes five ports at once
+    let ok = false;
+    for (let k = 0; k < 12 && !ok; k++) { sampleFloor(0.15, 0.85, hitV); const d = coreDist(hitV.x, hitV.z); ok = d > 22 && d < 70; }
+    if (!ok) return;
+    const ox = hitV.x, oz = hitV.z, alongX = Math.abs(CORE.x - ox) > Math.abs(CORE.z - oz);
+    const scan = { ip: randIp(), shown: false };
+    for (let k = 0; k < 5; k++) {
+      const off = (k - 2) * CELL;
+      scanQ.push({ at: t + k * 0.16, x: alongX ? ox : ox + off, z: alongX ? oz + off : oz, speed: 11, probe: true, lock: true, tag: { scan } });
+    }
+    pingAt(ox, oz);
+  }
+  function testAttack(cx, cy) {     // visitor's click: launch a packet at the core and watch it get dropped
+    if (!floorHit((cx / W) * 2 - 1, -((cy / H) * 2 - 1), hitV)) return;
+    let x = hitV.x, z = hitV.z;
+    const dx = x - CORE.x, dz = z - CORE.z, d = Math.hypot(dx, dz);
+    if (d < SH_R0 + 4) {
+      const ux = d > 1e-3 ? dx / d : 1, uz = d > 1e-3 ? dz / d : 0;
+      x = CORE.x + ux * (SH_R0 + 6); z = CORE.z + uz * (SH_R0 + 6);
+    }
+    pingAt(x, z);
+    spawnThreat({ x, z, speed: 13, lock: true, tag: { test: true } });
+  }
+  function emitSparks(x, y, z, nx, ny, nz, n) {
+    for (let k = 0; k < n; k++) {
+      const i = sNext; sNext = (sNext + 1) % NS;
+      const spd = 1.5 + Math.random() * 4.5;
+      sPos[i * 3] = x; sPos[i * 3 + 1] = y; sPos[i * 3 + 2] = z;
+      sVel[i * 3] = nx * spd + (Math.random() - 0.5) * 3;
+      sVel[i * 3 + 1] = ny * spd + Math.random() * 2.5;
+      sVel[i * 3 + 2] = nz * spd + (Math.random() - 0.5) * 3;
+      sBorn[i] = t; sLife[i] = 0.45 + Math.random() * 0.6;
+      const c = SPARK[Math.random() < 0.2 ? 2 : Math.random() < 0.5 ? 1 : 0];
+      sCol[i * 4] = c.r; sCol[i * 4 + 1] = c.g; sCol[i * 4 + 2] = c.b; sCol[i * 4 + 3] = 1;
+    }
+  }
+  function impact(i) {
+    const p = pk[i];
+    tmp.set(p.x - CORE.x, 0.3 - SH_Y, p.z - CORE.z).normalize();
+    let slot = 0;
+    for (let k = 1; k < hits.length; k++) if (hits[k].w < hits[slot].w) slot = k;
+    hits[slot].set(tmp.x, tmp.y, tmp.z, t);
+    const ix = CORE.x + tmp.x * SH_R, iy = SH_Y + tmp.y * SH_R, iz = CORE.z + tmp.z * SH_R;
+    emitSparks(ix, iy, iz, tmp.x, tmp.y, tmp.z, p.probe ? 10 : 18);
+    blocked++; lastImpact = t;
+    hudN.textContent = blocked.toLocaleString();
+    hudWhat.textContent = mobile ? 'blocked' : blocked === 1 ? 'threat blocked' : 'threats blocked';
+    const tag = p.tag, narrow = W < 700;
+    if (tag && tag.test) showLabel('BLOCKED', 'your test packet', ix, iy + 1, iz);
+    else if (tag && tag.scan) {
+      if (!tag.scan.shown) { tag.scan.shown = true; showLabel('PORT SCAN', narrow ? '5 probes dropped' : `${tag.scan.ip} · 5 probes dropped`, ix, iy + 1, iz); }
+    } else if (t - lastDropLabel > 1.2) {
+      lastDropLabel = t;
+      const [port, name] = ATTACKS[Math.floor(Math.random() * ATTACKS.length)];
+      showLabel('DROP', narrow ? `:${port} ${name}` : `${randIp()} → :${port} ${name}`, ix, iy + 1, iz);
+    }
+    p.alive = false;
+    writeDead(i);
+  }
+
+  const aPosA = aPos.array, aRotA = aRot.array, aColA = aCol.array, pPosA = pPos.array, pColA = pCol.array;
+  const rPosA = rPos.array, rInfoA = rInfo.array;
+  function emit(i, s, x, z, dx, dz, tt, r, g, b) {
+    const v = (i * K + s) * 3, o = v * 3;
+    const taper = 1 - 0.55 * tt, w = 0.30 * taper, h = 0.34 * taper;
+    const px = -dz * w, pz = dx * w;
+    tPos[o] = x + px; tPos[o + 1] = h; tPos[o + 2] = z + pz;
+    tPos[o + 3] = x; tPos[o + 4] = 0.035; tPos[o + 5] = z;
+    tPos[o + 6] = x - px; tPos[o + 7] = h; tPos[o + 8] = z - pz;
+    tT[v] = tT[v + 1] = tT[v + 2] = tt;
+    tCol[o] = tCol[o + 3] = tCol[o + 6] = r;
+    tCol[o + 1] = tCol[o + 4] = tCol[o + 7] = g;
+    tCol[o + 2] = tCol[o + 5] = tCol[o + 8] = b;
+  }
+  function buildTrail(i) {
+    const p = pk[i], c = KINDS[p.kind].color;
+    const flicker = p.kind === THREAT ? 0.7 + 0.3 * Math.sin(t * 23 + p.ph) : 1;
+    const gain = TRAIL_GAIN * clamp((t - p.born) / 0.6, 0, 1) * flicker;
+    const r = c.r * gain, g = c.g * gain, b = c.b * gain;
+    const len = Math.max(1e-3, Math.min(p.L, p.run));
+    let s = 0, slot = 0, cx = p.x, cz = p.z;
+    for (let j = p.hist.length - 1; j >= 0 && s < len - 1e-4 && slot < K - 1; j--) {
+      const hx = p.hist[j][0], hz = p.hist[j][1];
+      const seg = Math.abs(cx - hx) + Math.abs(cz - hz);
+      if (seg < 1e-4) continue;
+      const sdx = Math.sign(cx - hx), sdz = Math.sign(cz - hz), use = Math.min(seg, len - s);
+      emit(i, slot++, cx, cz, sdx, sdz, s / len, r, g, b);
+      s += use; cx -= sdx * use; cz -= sdz * use;
+      emit(i, slot++, cx, cz, sdx, sdz, s / len, r, g, b);
+    }
+    if (slot === 0) emit(i, slot++, p.x, p.z, p.dx, p.dz, 0, 0, 0, 0);
+    p.tx = cx; p.tz = cz;
+    const src = (i * K + slot - 1) * 3;         // pad unused samples with the tail (zero-area quads)
+    for (let s2 = slot; s2 < K; s2++) {
+      const dst = (i * K + s2) * 3;
+      tPos.copyWithin(dst * 3, src * 3, src * 3 + 9);
+      tCol.copyWithin(dst * 3, src * 3, src * 3 + 9);
+      tT.copyWithin(dst, src, src + 3);
+    }
+  }
+  function writeHead(i) {
+    const p = pk[i], c = KINDS[p.kind].color, thr = p.kind === THREAT;
+    const e = ease((t - p.born) / 0.45);
+    const pulse = thr ? 0.8 + 0.2 * Math.sin(t * 23 + p.ph) : 1;
+    aPosA[i * 3] = p.x; aPosA[i * 3 + 1] = 0.3 + Math.sin(t * 3.1 + p.ph) * 0.04; aPosA[i * 3 + 2] = p.z;
+    aRotA[i * 2] = p.yaw; aRotA[i * 2 + 1] = p.roll;
+    const g = (thr ? 2.3 : ARROW_GAIN) * pulse, pg = POOL_GAIN * e * pulse;
+    aColA[i * 4] = c.r * g; aColA[i * 4 + 1] = c.g * g; aColA[i * 4 + 2] = c.b * g; aColA[i * 4 + 3] = e * (p.probe ? 0.8 : 1);
+    pPosA[i * 2] = p.x; pPosA[i * 2 + 1] = p.z;
+    pColA[i * 3] = c.r * pg; pColA[i * 3 + 1] = c.g * pg; pColA[i * 3 + 2] = c.b * pg;
+    const locked = thr && p.lock >= 0;
+    rPosA[i * 2] = locked ? p.x : 1e5; rPosA[i * 2 + 1] = locked ? p.z : 1e5;
+    rInfoA[i * 2] = p.lock; rInfoA[i * 2 + 1] = locked ? 1 : 0;
+  }
+  function writeDead(i) {
+    aColA[i * 4 + 3] = 0; aPosA[i * 3 + 1] = -50;
+    pColA[i * 3] = pColA[i * 3 + 1] = pColA[i * 3 + 2] = 0;
+    rInfoA[i * 2 + 1] = 0; rPosA[i * 2] = rPosA[i * 2 + 1] = 1e5;
+    const a = i * VPP * 3, b = a + VPP * 3;
+    tPos.fill(0, a, b); tCol.fill(0, a, b);
+  }
+
+  /* ---------- interaction ---------- */
+  addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
+    ptr.x = (e.clientX / W) * 2 - 1; ptr.y = -((e.clientY / H) * 2 - 1); ptr.on = 1;
+  }, { passive: true });
+  document.documentElement.addEventListener('mouseleave', () => { ptr.on = 0; });
+  addEventListener('blur', () => { ptr.on = 0; });
+
+  // a tap or click on empty page space (not text, links or buttons) fires a test attack at that spot
+  const EMPTY = 'html, body, .wrap, section, header, footer, .route, .project-grid, .hero-actions, .chips, .skill-group';
+  const down = { ok: false, x: 0, y: 0, t: 0 };
+  addEventListener('pointerdown', (e) => {
+    const el = e.target;
+    down.ok = e.isPrimary && e.button === 0 && el instanceof Element && el.matches(EMPTY);
+    down.x = e.clientX; down.y = e.clientY; down.t = performance.now();
+  }, { passive: true });
+  addEventListener('pointercancel', () => { down.ok = false; }, { passive: true });
+  addEventListener('pointerup', (e) => {
+    if (!down.ok) return;
+    down.ok = false;
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8 || performance.now() - down.t > 500) return;
+    if (String(window.getSelection ? getSelection() : '').length) return;
+    testAttack(e.clientX, e.clientY);
+  }, { passive: true });
+
+  /* ---------- frame update ---------- */
+  function update(dt) {
+    t += dt; sceneAge += dt; U.uTime.value = t;
+
+    // scroll: progress drives the camera, speed adds a little lens kick
+    const sy = scrollY;
+    const vel = (sy - lastScroll) / dt; lastScroll = sy;
+    warp = lerp(warp, Math.min(Math.abs(vel) / 2500, 1), 1 - Math.exp(-dt * (Math.abs(vel) > 50 ? 4 : 1.5)));
+    const sp = smooth(sy / (innerHeight * 0.9));
+
+    // boot: once the page is ready, a wave from the core brings the network online and raises the shield
+    if (introT < 0 && root.classList.contains('ready')) { introT = 0; nextThreat = t + 2.8; nextScan = t + 9; }
+    if (introT >= 0) {
+      introT += dt;
+      if (introT < 3.4) U.uReveal.value.z = ease(introT / 3.0) * 160; else U.uReveal.value.w = 0;
+      if (!bootLabel && introT > 2.2) {
+        bootLabel = true;
+        if (W < 700) showLabel('ONLINE', 'firewall shield up', CORE.x, 0.3, CORE.z + SH_R0, 'ok');
+        else showLabel('ONLINE', 'firewall shield up', CORE.x, SH_Y + SH_R + 0.8, CORE.z, 'ok');
+      }
+    }
+    const boot = Math.max(introT, 0);
+    shieldMat.uniforms.uPowerH.value = lerp(-1.3, 1.3, ease((boot - 0.6) / 1.6));
+    floorMat.uniforms.uRadarOn.value = ease((boot - 1.0) / 1.2);
+    const prevSweep = sweep;
+    sweep = (sweep + dt * SWEEP) % (Math.PI * 2);
+    floorMat.uniforms.uRadar.value.z = sweep;
+
+    // camera: hero framing with the shield beside the text, then an overhead radar view as you scroll
+    ptr.s = lerp(ptr.s, ptr.on, 1 - Math.exp(-dt * 3));
+    const tanH = Math.tan(THREE.MathUtils.degToRad(baseFov) / 2), wide = camera.aspect >= 1.15;
+    const hPitch = Math.atan((2 * horizonFrac - 1) * tanH);
+    const hX = CORE.x + (wide ? 0.5 : 0) * CORE.z * tanH * camera.aspect;
+    const oPitch = -1.0, oY = wide ? 19 : 26, ahead = oY / Math.tan(-oPitch);
+    const oX = CORE.x - (wide ? 0.42 : 0) * Math.hypot(oY, ahead) * tanH * camera.aspect;
+    const ie = introT < 0 ? 0 : ease(introT / 3.2);
+    const tX = lerp(hX, oX, sp) + Math.sin(t * 0.11) * 0.5 + ptr.x * ptr.s * 1.2;
+    const tY = lerp(wide ? 2.4 : 2.2, oY, sp) + (1 - ie) * 8;
+    const tZ = lerp(0, CORE.z + ahead, sp) + (1 - ie) * 6;
+    const tPitch = lerp(hPitch, oPitch, sp) - (1 - ie) * 0.45 + ptr.y * ptr.s * 0.03;
+    const tYaw = Math.sin(t * 0.07) * 0.025 - ptr.x * ptr.s * 0.05;
+    const tFov = baseFov + warp * 3;
+    if (!cam.snapped) Object.assign(cam, { x: tX, y: tY, z: tZ, pitch: tPitch, yaw: tYaw, fov: tFov, snapped: true });
+    const k = 1 - Math.exp(-dt * 3);
+    cam.x = lerp(cam.x, tX, k); cam.y = lerp(cam.y, tY, k); cam.z = lerp(cam.z, tZ, k);
+    cam.pitch = lerp(cam.pitch, tPitch, k); cam.yaw = lerp(cam.yaw, tYaw, k); cam.fov = lerp(cam.fov, tFov, k);
+    camera.position.set(cam.x, cam.y, cam.z);
+    camera.rotation.set(cam.pitch, cam.yaw, 0);
+    if (Math.abs(camera.fov - cam.fov) > 0.005) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
+    camera.updateMatrixWorld();
+    sky.position.copy(camera.position);
+    floor.position.set(camera.position.x, 0, camera.position.z);
+    footprint();
+
+    // the protected core
+    const cs = ease((boot - 0.3) / 0.9), hitPulse = Math.exp(-(t - lastImpact) * 5);
+    core.scale.setScalar(1.25 * Math.max(cs, 1e-3));
+    core.rotation.set(t * 0.31, t * 0.47, 0);
+    core.position.y = CORE_Y + Math.sin(t * 1.3) * 0.12;
+    coreMat.uniforms.uPulse.value = 0.15 + 0.15 * Math.sin(t * 2.4) + hitPulse * 0.5;
+    ringA.position.y = ringB.position.y = glow.position.y = core.position.y;
+    ringA.scale.setScalar(Math.max(cs, 1e-3)); ringB.scale.setScalar(Math.max(cs, 1e-3));
+    ringA.rotation.set(1.25 + Math.sin(t * 0.3) * 0.1, t * 0.5, 0);
+    ringB.rotation.set(-0.9, -t * 0.35, 0.4);
+    glow.scale.setScalar(6 * (1 + 0.08 * Math.sin(t * 2.4) + hitPulse * 0.25));
+    glow.material.opacity = cs * (0.55 + hitPulse * 0.45);
+    shield.rotation.y = t * 0.04;
+    shieldMat.uniforms.uDim.value = lerp(1, mobile ? 0.45 : 0.6, sp);   // quieter behind the content
+
+    // cursor flashlight and attack pings on the floor
+    const pu = floorMat.uniforms.uPointer.value;
+    if (ptr.s > 0.01 && floorHit(ptr.x, ptr.y, hitV)) pu.set(hitV.x, hitV.z, ptr.s); else pu.z = 0;
+    for (const g of pings) if (g.w > 0) { g.z += dt; if (g.z > 3) g.w = 0; }
+
+    // router nodes: keep a set scattered over the visible floor
+    const nodeTarget = Math.round(clamp(footArea / 120, 8, NN));
+    let nAlive = 0;
+    for (const n of nodes) if (n.alive) nAlive++;
+    for (let i = 0; i < NN; i++) {
+      const n = nodes[i];
+      if (n.alive && (offscreen(n.x, n.z, 1.5) || farAway(n.x, n.z))) {
+        if (nAlive > nodeTarget) { hideNode(i); nAlive--; }
+        else { sampleFloor(0.8, 1, hitV); if (!placeNode(i, hitV.x, hitV.z)) nAlive--; }
+      } else if (!n.alive && nAlive < nodeTarget) {
+        sampleFloor(0, 1, hitV);
+        if (placeNode(i, hitV.x, hitV.z)) nAlive++;
+      }
+    }
+
+    // threats: a steady trickle plus the occasional port scan
+    let threats = 0;
+    for (const p of pk) if (p.alive && p.kind === THREAT) threats++;
+    if (t > nextThreat) {
+      if (threats < (mobile ? 2 : 3) && spawnThreat()) threats++;
+      nextThreat = t + 0.8 + Math.random() * 1.8;
+    }
+    if (t > nextScan) { queueScan(); nextScan = t + 10 + Math.random() * 6; }
+    while (scanQ.length && scanQ[0].at <= t) spawnThreat(scanQ.shift());
+
+    // packets
+    let target = Math.round(clamp(footArea / (mobile ? 70 : 60), 8, mobile ? 16 : 26) * lerp(1, 0.8, sp));
+    target = introT < 0 ? 0 : Math.round(target * clamp((introT - 0.5) / 1.6, 0, 1));
+    let alive = 0, births = 0;
+    for (const p of pk) if (p.alive && p.kind !== THREAT) alive++;
+    for (let i = 0; i < NMAX; i++) {
+      const p = pk[i];
+      if (!p.alive) {
+        if (alive < target && births < 2 && sampleSpawn(hitV)) { spawnPacket(i, hitV.x, hitV.z); alive++; births++; }
+        else { writeDead(i); continue; }
+      }
+      advance(p, dt);
+      let dy = Math.atan2(p.dx, p.dz) - p.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      const turn = dy * (1 - Math.exp(-dt * 14));
+      p.yaw += turn;
+      p.roll = lerp(p.roll, clamp(-(turn / dt) * 0.1, -0.65, 0.65), 1 - Math.exp(-dt * 9));
+      if (p.kind === THREAT) {
+        const hx = p.x - CORE.x, hz = p.z - CORE.z, d = Math.hypot(hx, hz);
+        if (p.lock < 0 && d < RADAR_R) {        // IDS lock: when the sweep passes, or close to the shield
+          const behind = ((sweep - Math.atan2(hz, hx)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          if (behind <= ((sweep - prevSweep + Math.PI * 2) % (Math.PI * 2)) + 1e-3 || d < SH_R0 + 7) p.lock = t;
+        }
+        if (d < SH_R0) { impact(i); continue; }
+        if (farAway(p.x, p.z)) { p.alive = false; writeDead(i); continue; }
+        buildTrail(i);
+      } else {
+        buildTrail(i);
+        if ((offscreen(p.x, p.z) && offscreen(p.tx, p.tz)) || farAway(p.x, p.z)) {
+          if (alive > target || !sampleSpawn(hitV)) { p.alive = false; alive--; writeDead(i); continue; }
+          spawnPacket(i, hitV.x, hitV.z);
+          buildTrail(i);
+        }
+      }
+      writeHead(i);
+    }
+
+    // sparks fly off the shield, fall and bounce once
+    for (let i = 0; i < NS; i++) {
+      const age = t - sBorn[i], o = i * 3;
+      if (age > sLife[i]) { if (sCol[i * 4 + 3] > 0) { sCol[i * 4 + 3] = 0; sPos[o + 1] = -50; } continue; }
+      sVel[o + 1] -= 9.8 * dt;
+      sPos[o] += sVel[o] * dt; sPos[o + 1] += sVel[o + 1] * dt; sPos[o + 2] += sVel[o + 2] * dt;
+      if (sPos[o + 1] < 0.03) { sPos[o + 1] = 0.03; sVel[o + 1] *= -0.3; sVel[o] *= 0.7; sVel[o + 2] *= 0.7; }
+      sCol[i * 4 + 3] = 1 - age / sLife[i];
+    }
+
+    // motes drift upward and wrap around the camera
+    const camX = camera.position.x, camZ = camera.position.z;
+    for (let i = 0; i < NM; i++) {
+      const o = i * 3, s = mSeed[i];
+      mPos[o] += Math.sin(t * 0.3 + s * 40) * dt * 0.12;
+      mPos[o + 1] += dt * (0.12 + 0.3 * s);
+      if (mPos[o + 1] > 17.5) mPos[o + 1] = 0.4;
+      if (mPos[o + 2] > camZ + 6) mPos[o + 2] -= 100;
+      if (mPos[o + 2] < camZ - 94) mPos[o + 2] += 100;
+      if (mPos[o] > camX + 45) mPos[o] -= 90;
+      if (mPos[o] < camX - 45) mPos[o] += 90;
+    }
+
+    // log tags follow their impact point in screen space, only while the hero is in view
+    labelVis = 1 - smooth((sp - 0.12) / 0.2);
+    for (const L of labels) {
+      if (!L.on) continue;
+      const age = t - L.t0;
+      tmp.set(L.x, L.y, L.z).project(camera);
+      if (age > 2.4 || labelVis <= 0.01 || tmp.z > 1 || tmp.z < -1) { L.on = false; L.el.style.opacity = '0'; continue; }
+      const half = L.w / 2 + 8;
+      // narrow screens: tags hang below the impact so they never cover the hero text
+      const sx = clamp((tmp.x * 0.5 + 0.5) * W, half, W - half);
+      const syy = (-tmp.y * 0.5 + 0.5) * H + (W < 700 ? 40 + age * 6 + L.stack * 26 : -age * 12 - L.stack * 26);
+      const fade = Math.min(1, age / 0.15) * (1 - smooth((age - 1.7) / 0.7));
+      L.el.style.transform = `translate3d(${(sx - L.w / 2).toFixed(1)}px, ${(syy - 26).toFixed(1)}px, 0)`;
+      L.el.style.opacity = (fade * labelVis).toFixed(3);
+    }
+
+    trailGeo.attributes.position.needsUpdate = true;
+    trailGeo.attributes.aT.needsUpdate = true;
+    trailGeo.attributes.aColor.needsUpdate = true;
+    aPos.needsUpdate = aRot.needsUpdate = aCol.needsUpdate = pPos.needsUpdate = pCol.needsUpdate = true;
+    rPos.needsUpdate = rInfo.needsUpdate = true;
+    sparkGeo.attributes.position.needsUpdate = true;
+    sparkGeo.attributes.aCol.needsUpdate = true;
+    moteGeo.attributes.position.needsUpdate = true;
+    if (nodesDirty) { nPos.needsUpdate = nInfo.needsUpdate = true; nodesDirty = false; }
+
+    // fade in, then dim behind the content once you scroll past the hero
+    const op = ease(sceneAge / 0.9) * lerp(1, mobile ? 0.5 : 0.6, sp);
+    if (Math.abs(op - lastOp) > 0.003) { canvas.style.opacity = op.toFixed(3); lastOp = op; }
+  }
+
+  /* ---------- start ---------- */
+  const actions = document.querySelector('.hero-actions');
+  if (actions) actions.after(hud);
+  document.body.insertBefore(labelLayer, document.getElementById('packets'));
+  resize();
+  new ResizeObserver(resize).observe(canvas);
+  if (document.fonts) document.fonts.ready.then(measureHero);
+  addEventListener('load', measureHero);
+  for (let i = 0; i < NM; i++) {
+    mPos[i * 3] = (Math.random() - 0.5) * 90; mPos[i * 3 + 1] = 0.4 + Math.random() * 17;
+    mPos[i * 3 + 2] = 6 - Math.random() * 100; mSeed[i] = Math.random();
+  }
+  for (let i = 0; i < NMAX; i++) writeDead(i);
+  update(1 / 60);                                  // settle the camera before compiling
+  renderer.compile(scene, camera);                 // compile shaders while the canvas is still invisible
+
+  window.__scene3d = 'running';
+  if (window.__packets2D) window.__packets2D.stop();
+  root.classList.add('webgl');
+
+  // render loop with a simple quality governor (drops resolution, then bloom, on slow devices)
+  let raf = 0, last = performance.now(), settle = 1.5, acc = 0, frames = 0;
+  function loop(now) {
+    raf = requestAnimationFrame(loop);
+    const raw = (now - last) / 1000; last = now;
+    if (raw <= 0) return;
+    const dt = Math.min(raw, 0.05);
+    if (settle > 0) settle -= raw;
+    else if (raw < 0.25) {
+      acc += raw; frames++;
+      if (acc > 2) {
+        if (acc / frames > 0.026 && tier > 0) { tier--; resize(); settle = 1; }
+        acc = 0; frames = 0;
+      }
+    }
+    update(dt);
+    if (composer && tier > 0) composer.render(dt); else renderer.render(scene, camera);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
+    else if (!raf) { last = performance.now(); settle = 0.6; raf = requestAnimationFrame(loop); }
+  });
+  raf = requestAnimationFrame(loop);
+}
 </script>
 
 </body>
