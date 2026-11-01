@@ -567,13 +567,12 @@
     text-shadow:0 1px 12px rgba(10,14,16,.95);animation:simIn .9s ease .2s both;
   }
   .sim-hud b{color:#FF6B6B;font-weight:600;}
-  .sim-hud .sim-hint{color:var(--text-dim);}
+  .sim-hud .sim-line2{flex-basis:100%;padding-left:15px;color:var(--text-dim);}
+  .webgl body{touch-action:manipulation;}
   .sim-hud .sim-dot{width:6px;height:6px;border-radius:50%;background:var(--up);animation:pulse 2.2s infinite;}
   @keyframes simIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
   @media (max-width:600px){
     .sim-hud{font-size:11px;}
-    .sim-hud .sim-sep2{display:none;}
-    .sim-hud .sim-hint{flex-basis:100%;padding-left:15px;}
   }
   #scene-labels{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;}
   #scene-labels .sl{
@@ -1067,6 +1066,7 @@ async function startScene() {
   ];
   const ARROW_GAIN = 1.9, TRAIL_GAIN = 1.1, POOL_GAIN = 0.4;
   const SPARK = [col('#FF4D57', 2.2), col('#FFB454', 2.2), col('#FFF1E0', 2.6)];
+  const SPARK_HIT = [col('#6FA8FF', 2.2), col('#BFE0FF', 2.4), col('#FFFFFF', 2.6)];
 
   /* ---------- world ---------- */
   const CELL = 4, FOG = 0.0165, MAXD = 105, K = 10;
@@ -1164,7 +1164,7 @@ async function startScene() {
       uMinorCol: { value: col('#5FD68B', 0.05) }, uMajorCol: { value: col('#5FD68B', 0.11) },
       uMarkCol: { value: col('#5FD68B', 0.3) }, uRevealCol: { value: col('#5FD68B', 0.9) },
       uPointer: { value: new THREE.Vector3() }, uPointerCol: { value: col('#6FA8FF', 0.5) },
-      uPingCol: { value: col('#FF4D57', 1.2) },
+      uPingCol: { value: col('#FF4D57', 1.2) }, uPingColB: { value: col('#6FA8FF', 1.2) },
       uPings: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
       uRadar: { value: new THREE.Vector4(CORE.x, CORE.z, 0, RADAR_R) },
       uRadarCol: { value: col('#5FD68B', 0.55) }, uShieldCol: { value: col('#6FA8FF', 0.6) },
@@ -1172,7 +1172,7 @@ async function startScene() {
     },
     vertexShader: WORLD_VS, extensions: EXT,
     fragmentShader: COMMON + /* glsl */`
-      uniform vec3 uMinorCol, uMajorCol, uMarkCol, uRevealCol, uPointer, uPointerCol, uPingCol, uRadarCol, uShieldCol;
+      uniform vec3 uMinorCol, uMajorCol, uMarkCol, uRevealCol, uPointer, uPointerCol, uPingCol, uPingColB, uRadarCol, uShieldCol;
       uniform vec4 uPings[4];
       uniform vec4 uRadar;
       uniform float uShieldR0, uRadarOn;
@@ -1206,7 +1206,7 @@ async function startScene() {
           vec4 g = uPings[i];
           if (g.w <= 0.0) continue;
           float k = (length(p - g.xy) - g.z * 12.0) / 0.5;
-          lines += uPingCol * exp(-k * k) * exp(-g.z * 1.6) * g.w * (0.45 + lit * 2.6);
+          lines += (g.w > 1.5 ? uPingColB : uPingCol) * exp(-k * k) * exp(-g.z * 1.6) * (0.45 + lit * 2.6);
         }
 
         if (uReveal.w > 0.5){
@@ -1447,21 +1447,21 @@ async function startScene() {
   pools.frustumCulled = false;
   scene.add(pools);
 
-  const retGeo = floorQuads(NMAX), rPos = inst(NMAX, 2), rInfo = inst(NMAX, 2);   // info: lock time, visible
+  const retGeo = floorQuads(NMAX), rPos = inst(NMAX, 2), rInfo = inst(NMAX, 3);   // info: lock time, visible, aimed at
   retGeo.setAttribute('aPos', rPos); retGeo.setAttribute('aInfo', rInfo);
   const reticles = new THREE.Mesh(retGeo, new THREE.ShaderMaterial({
-    uniforms: { ...U, uRetCol: { value: col('#FF4D57', 1.6) } }, ...ADD, ...ON_FLOOR,
+    uniforms: { ...U, uRetCol: { value: col('#FF4D57', 1.6) }, uRetAim: { value: col('#BFE0FF', 2.0) } }, ...ADD, ...ON_FLOOR,
     vertexShader: /* glsl */`
-      attribute vec2 aPos; attribute vec2 aInfo;
-      varying vec3 vW; varying vec2 vL; varying vec2 vInfo;
+      attribute vec2 aPos; attribute vec3 aInfo;
+      varying vec3 vW; varying vec2 vL; varying vec3 vInfo;
       void main(){
         vec3 w = vec3(aPos.x + position.x * 1.8, 0.0, aPos.y + position.z * 1.8);
         vW = w; vL = position.xz * 1.8; vInfo = aInfo;
         gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
       }`,
     fragmentShader: COMMON + /* glsl */`
-      uniform vec3 uRetCol;
-      varying vec3 vW; varying vec2 vL; varying vec2 vInfo;
+      uniform vec3 uRetCol, uRetAim;
+      varying vec3 vW; varying vec2 vL; varying vec3 vInfo;
       void main(){
         if (vInfo.y < 0.5) discard;
         float age = max(uTime - vInfo.x, 0.0);
@@ -1474,8 +1474,9 @@ async function startScene() {
         float vx = (1.0 - smoothstep(th, th + fw, abs(q.x - s))) * step(s - arm, q.y) * step(q.y, s + th);
         float vy = (1.0 - smoothstep(th, th + fw, abs(q.y - s))) * step(s - arm, q.x) * step(q.x, s + th);
         float blink = age < 0.6 ? 0.4 + 0.6 * step(0.5, fract(age * 8.0)) : 0.85;
+        blink = max(blink, vInfo.z * (0.8 + 0.2 * sin(uTime * 14.0)));
         float dist = length(vW - cameraPosition);
-        gl_FragColor = vec4(uRetCol * max(vx, vy) * blink * (1.0 - fogAmount(dist)), 1.0);
+        gl_FragColor = vec4(mix(uRetCol, uRetAim, vInfo.z) * max(vx, vy) * blink * (1.0 - fogAmount(dist)), 1.0);
         #include <colorspace_fragment>
       }`,
   }));
@@ -1654,24 +1655,30 @@ async function startScene() {
   hud.className = 'sim-hud';
   hud.setAttribute('aria-hidden', 'true');
   hud.innerHTML = '<span class="sim-dot"></span><span>firewall sim</span><span class="sim-sep">·</span>'
-    + '<span><b class="sim-n">0</b> <span class="sim-what"></span></span><span class="sim-sep sim-sep2">·</span><span class="sim-hint"></span>';
-  hud.querySelector('.sim-what').textContent = mobile ? 'blocked' : 'threats blocked';
-  hud.querySelector('.sim-hint').textContent = touch ? 'tap the grid to test it' : 'click the grid to test it';
-  const hudN = hud.querySelector('.sim-n'), hudWhat = hud.querySelector('.sim-what');
+    + '<span><b class="sim-n">0</b> blocked</span><span class="sim-line2"></span>';
+  const hudN = hud.querySelector('.sim-n'), hudLine2 = hud.querySelector('.sim-line2');
+  const HINT = touch ? 'tap the red packets to stop them' : 'click the red packets to stop them before the firewall does';
+  let mine = 0, streak = 0, bestStreak = 0, engagedUntil = -1, hoverIdx = -1;
+  try { bestStreak = Number(localStorage.getItem('tt-best-streak')) || 0; } catch (e) { /* storage blocked: no saved best */ }
+  function updateHud() {
+    hudN.textContent = blocked.toLocaleString();
+    hudLine2.textContent = mine ? `you stopped ${mine} · streak ${streak} · best ${bestStreak}` : HINT;
+  }
+  updateHud();
   const labelLayer = document.createElement('div');
   labelLayer.id = 'scene-labels';
   labelLayer.setAttribute('aria-hidden', 'true');
   const labels = Array.from({ length: 5 }, () => {
     const el = document.createElement('div'), b = document.createElement('b'), s = document.createElement('span');
     el.className = 'sl'; el.append(b, s); labelLayer.appendChild(el);
-    return { el, b, s, t0: -10, x: 0, y: 0, z: 0, w: 0, on: false, stack: 0 };
+    return { el, b, s, t0: -10, x: 0, y: 0, z: 0, w: 0, on: false, stack: 0, force: false };
   });
   const ATTACKS = [[22, 'ssh brute force'], [3389, 'rdp probe'], [445, 'smb exploit'], [23, 'telnet login'],
     [1433, 'sql injection'], [8080, 'path traversal'], [5900, 'vnc scan'], [21, 'ftp anon login']];
   const NETS = ['203.0.113.', '198.51.100.', '192.0.2.'];   // documentation-only ranges (RFC 5737)
   const randIp = () => NETS[Math.floor(Math.random() * 3)] + (2 + Math.floor(Math.random() * 250));
-  function showLabel(action, detail, x, y, z, cls) {
-    if (labelVis < 0.5) return;
+  function showLabel(action, detail, x, y, z, cls, force) {
+    if (labelVis < 0.5 && !force) return;
     let L = labels[0];
     for (const l of labels) if (l.t0 < L.t0) L = l;
     let stack = 0;                      // stack tags that are still on screen so they never overlap
@@ -1679,7 +1686,7 @@ async function startScene() {
     L.stack = stack;
     L.b.textContent = action; L.s.textContent = detail;
     L.el.className = 'sl' + (cls ? ' ' + cls : '');
-    L.t0 = t; L.x = x; L.y = y; L.z = z; L.on = true; L.w = L.el.offsetWidth;
+    L.t0 = t; L.x = x; L.y = y; L.z = z; L.on = true; L.force = !!force; L.w = L.el.offsetWidth;
   }
 
   function measureHero() {
@@ -1864,13 +1871,13 @@ async function startScene() {
     p.probe = !!(opt && opt.probe);
     return true;
   }
-  function pingAt(x, z) {
+  function pingAt(x, z, kind = 1) {
     let slot = 0, oldest = -1;
     for (let k = 0; k < 4; k++) {
       if (pings[k].w <= 0) { slot = k; break; }
       if (pings[k].z > oldest) { oldest = pings[k].z; slot = k; }
     }
-    pings[slot].set(x, z, 0, 1);
+    pings[slot].set(x, z, 0, kind);
   }
   function queueScan() {           // an attacker out in the network probes five ports at once
     let ok = false;
@@ -1884,27 +1891,56 @@ async function startScene() {
     }
     pingAt(ox, oz);
   }
-  function testAttack(cx, cy) {     // visitor's click: launch a packet at the core and watch it get dropped
-    if (!floorHit((cx / W) * 2 - 1, -((cy / H) * 2 - 1), hitV)) return;
-    let x = hitV.x, z = hitV.z;
-    const dx = x - CORE.x, dz = z - CORE.z, d = Math.hypot(dx, dz);
-    if (d < SH_R0 + 4) {
-      const ux = d > 1e-3 ? dx / d : 1, uz = d > 1e-3 ? dz / d : 0;
-      x = CORE.x + ux * (SH_R0 + 6); z = CORE.z + uz * (SH_R0 + 6);
+  /* ---------- the game: tap red packets before they reach the shield ---------- */
+  function nearestThreat(cx, cy, r) {   // closest threat head to a screen point, within r px
+    let best = -1, bd = r * r;
+    for (let i = 0; i < NMAX; i++) {
+      const p = pk[i];
+      if (!p.alive || p.kind !== THREAT) continue;
+      tmp.set(p.x, 0.3, p.z).project(camera);
+      if (tmp.z > 1 || tmp.z < -1) continue;
+      const d = ((tmp.x * 0.5 + 0.5) * W - cx) ** 2 + ((-tmp.y * 0.5 + 0.5) * H - cy) ** 2;
+      if (d < bd) { bd = d; best = i; }
     }
-    pingAt(x, z);
-    spawnThreat({ x, z, speed: 13, lock: true, tag: { test: true } });
+    return best;
   }
-  function emitSparks(x, y, z, nx, ny, nz, n) {
+  function stopThreat(i) {
+    const p = pk[i];
+    emitSparks(p.x, 0.4, p.z, 0, 1, 0, 24, SPARK_HIT, true);
+    pingAt(p.x, p.z, 2);
+    mine++; streak++;
+    if (streak > bestStreak) {
+      bestStreak = streak;
+      try { localStorage.setItem('tt-best-streak', String(bestStreak)); } catch (e) { /* not saved */ }
+    }
+    engagedUntil = t + 20;           // playing brings more attackers for a while
+    showLabel('STOPPED', streak >= 2 ? `×${streak} streak` : '+1', p.x, 1.0, p.z, 'ok', true);
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) { /* no haptics */ } }
+    p.alive = false;
+    writeDead(i);
+    updateHud();
+  }
+  function tapAt(cx, cy, onEmpty) {
+    const i = nearestThreat(cx, cy, touch ? 46 : 34);
+    if (i >= 0) { stopThreat(i); return; }
+    // a miss on open floor leaves a harmless blue ping
+    if (onEmpty && floorHit((cx / W) * 2 - 1, -((cy / H) * 2 - 1), hitV)) pingAt(hitV.x, hitV.z, 2);
+  }
+  function emitSparks(x, y, z, nx, ny, nz, n, pal = SPARK, burst = false) {
     for (let k = 0; k < n; k++) {
       const i = sNext; sNext = (sNext + 1) % NS;
       const spd = 1.5 + Math.random() * 4.5;
       sPos[i * 3] = x; sPos[i * 3 + 1] = y; sPos[i * 3 + 2] = z;
-      sVel[i * 3] = nx * spd + (Math.random() - 0.5) * 3;
-      sVel[i * 3 + 1] = ny * spd + Math.random() * 2.5;
-      sVel[i * 3 + 2] = nz * spd + (Math.random() - 0.5) * 3;
+      if (burst) {                 // all-round pop for a packet you destroyed
+        const a = Math.random() * 6.283;
+        sVel[i * 3] = Math.cos(a) * spd * 0.8; sVel[i * 3 + 1] = 1.5 + Math.random() * 4; sVel[i * 3 + 2] = Math.sin(a) * spd * 0.8;
+      } else {
+        sVel[i * 3] = nx * spd + (Math.random() - 0.5) * 3;
+        sVel[i * 3 + 1] = ny * spd + Math.random() * 2.5;
+        sVel[i * 3 + 2] = nz * spd + (Math.random() - 0.5) * 3;
+      }
       sBorn[i] = t; sLife[i] = 0.45 + Math.random() * 0.6;
-      const c = SPARK[Math.random() < 0.2 ? 2 : Math.random() < 0.5 ? 1 : 0];
+      const c = pal[Math.random() < 0.2 ? 2 : Math.random() < 0.5 ? 1 : 0];
       sCol[i * 4] = c.r; sCol[i * 4 + 1] = c.g; sCol[i * 4 + 2] = c.b; sCol[i * 4 + 3] = 1;
     }
   }
@@ -1917,11 +1953,10 @@ async function startScene() {
     const ix = CORE.x + tmp.x * SH_R, iy = SH_Y + tmp.y * SH_R, iz = CORE.z + tmp.z * SH_R;
     emitSparks(ix, iy, iz, tmp.x, tmp.y, tmp.z, p.probe ? 10 : 18);
     blocked++; lastImpact = t;
-    hudN.textContent = blocked.toLocaleString();
-    hudWhat.textContent = mobile ? 'blocked' : blocked === 1 ? 'threat blocked' : 'threats blocked';
+    if (mine) streak = 0;            // one got past you; the firewall caught it instead
+    updateHud();
     const tag = p.tag, narrow = W < 700;
-    if (tag && tag.test) showLabel('BLOCKED', 'your test packet', ix, iy + 1, iz);
-    else if (tag && tag.scan) {
+    if (tag && tag.scan) {
       if (!tag.scan.shown) { tag.scan.shown = true; showLabel('PORT SCAN', narrow ? '5 probes dropped' : `${tag.scan.ip} · 5 probes dropped`, ix, iy + 1, iz); }
     } else if (t - lastDropLabel > 1.2) {
       lastDropLabel = t;
@@ -1982,14 +2017,14 @@ async function startScene() {
     aColA[i * 4] = c.r * g; aColA[i * 4 + 1] = c.g * g; aColA[i * 4 + 2] = c.b * g; aColA[i * 4 + 3] = e * (p.probe ? 0.8 : 1);
     pPosA[i * 2] = p.x; pPosA[i * 2 + 1] = p.z;
     pColA[i * 3] = c.r * pg; pColA[i * 3 + 1] = c.g * pg; pColA[i * 3 + 2] = c.b * pg;
-    const locked = thr && p.lock >= 0;
-    rPosA[i * 2] = locked ? p.x : 1e5; rPosA[i * 2 + 1] = locked ? p.z : 1e5;
-    rInfoA[i * 2] = p.lock; rInfoA[i * 2 + 1] = locked ? 1 : 0;
+    const locked = thr && p.lock >= 0, aimed = i === hoverIdx, show = locked || aimed;
+    rPosA[i * 2] = show ? p.x : 1e5; rPosA[i * 2 + 1] = show ? p.z : 1e5;
+    rInfoA[i * 3] = locked ? p.lock : -10; rInfoA[i * 3 + 1] = show ? 1 : 0; rInfoA[i * 3 + 2] = aimed ? 1 : 0;
   }
   function writeDead(i) {
     aColA[i * 4 + 3] = 0; aPosA[i * 3 + 1] = -50;
     pColA[i * 3] = pColA[i * 3 + 1] = pColA[i * 3 + 2] = 0;
-    rInfoA[i * 2 + 1] = 0; rPosA[i * 2] = rPosA[i * 2 + 1] = 1e5;
+    rInfoA[i * 3 + 1] = 0; rInfoA[i * 3 + 2] = 0; rPosA[i * 2] = rPosA[i * 2 + 1] = 1e5;
     const a = i * VPP * 3, b = a + VPP * 3;
     tPos.fill(0, a, b); tCol.fill(0, a, b);
   }
@@ -2002,12 +2037,14 @@ async function startScene() {
   document.documentElement.addEventListener('mouseleave', () => { ptr.on = 0; });
   addEventListener('blur', () => { ptr.on = 0; });
 
-  // a tap or click on empty page space (not text, links or buttons) fires a test attack at that spot
+  // a tap or click that isn't on a link, button or card can hit a red packet; on open space a miss also pings
   const EMPTY = 'html, body, .wrap, section, header, footer, .route, .project-grid, .hero-actions, .chips, .skill-group';
-  const down = { ok: false, x: 0, y: 0, t: 0 };
+  const SKIP = 'a, button, input, select, textarea, label, summary, nav, .project-card, [role="button"]';
+  const down = { ok: false, empty: false, x: 0, y: 0, t: 0 };
   addEventListener('pointerdown', (e) => {
     const el = e.target;
-    down.ok = e.isPrimary && e.button === 0 && el instanceof Element && el.matches(EMPTY);
+    down.ok = e.isPrimary && e.button === 0 && el instanceof Element && !el.closest(SKIP);
+    down.empty = down.ok && el.matches(EMPTY);
     down.x = e.clientX; down.y = e.clientY; down.t = performance.now();
   }, { passive: true });
   addEventListener('pointercancel', () => { down.ok = false; }, { passive: true });
@@ -2016,7 +2053,7 @@ async function startScene() {
     down.ok = false;
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8 || performance.now() - down.t > 500) return;
     if (String(window.getSelection ? getSelection() : '').length) return;
-    testAttack(e.clientX, e.clientY);
+    tapAt(e.clientX, e.clientY, down.empty);
   }, { passive: true });
 
   /* ---------- frame update ---------- */
@@ -2111,10 +2148,14 @@ async function startScene() {
     // threats: a steady trickle plus the occasional port scan
     let threats = 0;
     for (const p of pk) if (p.alive && p.kind === THREAT) threats++;
+    const engaged = t < engagedUntil;
     if (t > nextThreat) {
-      if (threats < (mobile ? 2 : 3) && spawnThreat()) threats++;
-      nextThreat = t + 0.8 + Math.random() * 1.8;
+      if (threats < (engaged ? (mobile ? 3 : 5) : (mobile ? 2 : 3)) && spawnThreat()) threats++;
+      nextThreat = t + (engaged ? 0.4 + Math.random() * 0.9 : 0.8 + Math.random() * 1.8);
     }
+
+    // desktop aim: highlight the threat under the cursor
+    hoverIdx = !touch && ptr.on ? nearestThreat((ptr.x * 0.5 + 0.5) * W, (-ptr.y * 0.5 + 0.5) * H, 34) : -1;
     if (t > nextScan) { queueScan(); nextScan = t + 10 + Math.random() * 6; }
     while (scanQ.length && scanQ[0].at <= t) spawnThreat(scanQ.shift());
 
@@ -2184,14 +2225,15 @@ async function startScene() {
       if (!L.on) continue;
       const age = t - L.t0;
       tmp.set(L.x, L.y, L.z).project(camera);
-      if (age > 2.4 || labelVis <= 0.01 || tmp.z > 1 || tmp.z < -1) { L.on = false; L.el.style.opacity = '0'; continue; }
+      const vis = L.force ? 1 : labelVis;
+      if (age > 2.4 || vis <= 0.01 || tmp.z > 1 || tmp.z < -1) { L.on = false; L.el.style.opacity = '0'; continue; }
       const half = L.w / 2 + 8;
       // narrow screens: tags hang below the impact so they never cover the hero text
       const sx = clamp((tmp.x * 0.5 + 0.5) * W, half, W - half);
       const syy = (-tmp.y * 0.5 + 0.5) * H + (W < 700 ? 40 + age * 6 + L.stack * 26 : -age * 12 - L.stack * 26);
       const fade = Math.min(1, age / 0.15) * (1 - smooth((age - 1.7) / 0.7));
       L.el.style.transform = `translate3d(${(sx - L.w / 2).toFixed(1)}px, ${(syy - 26).toFixed(1)}px, 0)`;
-      L.el.style.opacity = (fade * labelVis).toFixed(3);
+      L.el.style.opacity = (fade * vis).toFixed(3);
     }
 
     trailGeo.attributes.position.needsUpdate = true;
