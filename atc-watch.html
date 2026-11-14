@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATC Watch — FAA status monitor</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --card: #111a2e;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --line: #1e293b;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --grey: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 24px; }
+  .banner {
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid var(--line);
+  }
+  .banner .verdict { font-size: 32px; font-weight: 800; letter-spacing: 0.02em; }
+  .banner .desc { color: var(--muted); margin: 4px 0 0; }
+  .banner.ok { border-color: var(--green); }
+  .banner.ok .verdict { color: var(--green); }
+  .banner.watch { border-color: var(--amber); }
+  .banner.watch .verdict { color: var(--amber); }
+  .banner.ground_stop_pattern { border-color: var(--red); }
+  .banner.ground_stop_pattern .verdict { color: var(--red); }
+  .banner.unknown { border-color: var(--grey); }
+  .banner.unknown .verdict { color: var(--grey); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .finding { margin: 8px 0; }
+  .finding .severity {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 2px 8px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .finding .severity.critical { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+  .finding .severity.elevated { background: rgba(251, 191, 36, 0.15); color: var(--amber); }
+  .finding .severity.info { background: rgba(148, 163, 184, 0.15); color: var(--grey); }
+  .none { color: var(--muted); }
+  .source { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .source:first-of-type { border-top: none; }
+  .source .name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
+  .source .ok { color: var(--green); font-weight: 700; }
+  .source .bad { color: var(--red); font-weight: 700; }
+  .meta { color: var(--muted); font-size: 14px; }
+  .meta b { color: var(--text); }
+  .honesty { font-size: 14px; color: var(--muted); }
+  .honesty a { color: var(--text); }
+  .error { display: none; }
+  .error.show { display: block; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ATC Watch</h1>
+  <p class="subtitle">A read-only monitor on public FAA data. Does today look like a normal day, a day to watch, or the start of a ground stop?</p>
+
+  <div id="error" class="card error">
+    <h2>Data unavailable</h2>
+    <p class="none">The latest status snapshot could not be loaded. The monitor may be between updates, or the data file may be unreachable. This page retries automatically every 5 minutes.</p>
+  </div>
+
+  <div id="banner" class="banner unknown">
+    <div class="verdict" id="verdict">UNKNOWN</div>
+    <p class="desc" id="verdict-desc">Waiting for data…</p>
+  </div>
+
+  <div class="card">
+    <h2>Findings</h2>
+    <div id="findings"><p class="none">No findings loaded yet.</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Delayed airports</h2>
+    <div id="airports"><p class="none">None reported.</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Sources</h2>
+    <div id="sources"><p class="none">No source status loaded yet.</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Last updated</h2>
+    <p class="meta" id="updated">—</p>
+    <p class="meta" id="feed-updated">Feed stamp: —</p>
+    <p class="meta" id="counts">—</p>
+  </div>
+
+  <div class="card honesty">
+    <h2>About this page</h2>
+    <p>ATC Watch is an unofficial student project. It reads only the FAA's <strong>public</strong> status feeds — no login, no credentials, nothing is sent to FAA or airline systems, and it is not affiliated with the FAA. A delay pattern here is a prompt to look, not a safety verdict: three delayed airports can happen on a busy weather day, and a clean verdict only means nothing in the public feeds looks wrong. Source code: <a href="https://github.com/Tilakthapa3/atc-watch">github.com/Tilakthapa3/atc-watch</a>.</p>
+  </div>
+
+  <footer>ATC Watch · data refreshes every 15 minutes · page refreshes every 5 minutes</footer>
+</main>
+
+<script>
+(function () {
+  var DATA_URL = "https://raw.githubusercontent.com/Tilakthapa3/atc-watch/main/data/status.json";
+
+  var DESCRIPTIONS = {
+    "OK": "Nothing in the public FAA feeds looks wrong.",
+    "WATCH": "Something is off in the public feeds — a few airports delayed at once, or a control center named in an advisory. Worth a look, not a diagnosis.",
+    "GROUND_STOP_PATTERN": "The public feeds show a ground-stop pattern: ground stops named in advisories. This is the pattern of 2026-11-13, when all US departures were halted.",
+    "UNKNOWN": "All sources failed to report, so there is no data to judge by."
+  };
+
+  var BANNER_CLASS = {
+    "OK": "ok",
+    "WATCH": "watch",
+    "GROUND_STOP_PATTERN": "ground_stop_pattern",
+    "UNKNOWN": "unknown"
+  };
+
+  function el(id) { return document.getElementById(id); }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function render(data) {
+    var verdict = data.verdict || "UNKNOWN";
+    var banner = el("banner");
+    banner.className = "banner " + (BANNER_CLASS[verdict] || "unknown");
+    el("verdict").textContent = verdict;
+    el("verdict-desc").textContent = DESCRIPTIONS[verdict] || DESCRIPTIONS["UNKNOWN"];
+    el("error").classList.remove("show");
+
+    var findings = data.findings || [];
+    if (findings.length === 0) {
+      el("findings").innerHTML = '<p class="none">No findings — nothing flagged in this check.</p>';
+    } else {
+      el("findings").innerHTML = findings.map(function (f) {
+        return '<div class="finding"><span class="severity ' +
+          escapeHtml(f.severity || "info") + '">' + escapeHtml(f.severity || "info") +
+          '</span><strong>' + escapeHtml(f.rule || "") + '</strong>: ' +
+          escapeHtml(f.evidence || "") + '</div>';
+      }).join("");
+    }
+
+    var airports = data.delayed_airports || [];
+    el("airports").innerHTML = airports.length === 0
+      ? '<p class="none">None reported.</p>'
+      : "<p><b>" + airports.map(escapeHtml).join(", ") + "</b></p>";
+
+    var sources = data.sources || {};
+    var names = Object.keys(sources);
+    el("sources").innerHTML = names.length === 0
+      ? '<p class="none">No source status in this snapshot.</p>'
+      : names.map(function (name) {
+          var ok = sources[name];
+          return '<div class="source"><span class="name">' + escapeHtml(name) +
+            '</span><span class="' + (ok ? "ok" : "bad") + '">' +
+            (ok ? "ok" : "no data") + "</span></div>";
+        }).join("");
+
+    el("updated").innerHTML = "Snapshot: <b>" +
+      escapeHtml(data.generated_at_ct || data.generated_at_utc || "—") + "</b> (UTC: " +
+      escapeHtml(data.generated_at_utc || "—") + ")";
+    el("feed-updated").textContent = "Feed stamp: " + (data.feed_updated || "—");
+    var counts = data.counts || {};
+    el("counts").textContent = "Advisories: " + (counts.advisories != null ? counts.advisories : "—") +
+      " · Delayed airports: " + (counts.delayed_airports != null ? counts.delayed_airports : "—") +
+      " · Findings: " + (counts.findings != null ? counts.findings : "—");
+  }
+
+  function showError() {
+    el("error").classList.add("show");
+    var banner = el("banner");
+    banner.className = "banner unknown";
+    el("verdict").textContent = "UNKNOWN";
+    el("verdict-desc").textContent = "The latest snapshot could not be loaded.";
+  }
+
+  function load() {
+    fetch(DATA_URL, { cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) { throw new Error("HTTP " + resp.status); }
+        return resp.json();
+      })
+      .then(render)
+      .catch(showError);
+  }
+
+  load();
+  setInterval(load, 5 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
